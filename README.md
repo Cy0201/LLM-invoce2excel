@@ -20,11 +20,22 @@ AI 只依赖一个 **Anthropic Messages 协议**接口。**首次使用前需要
 
 ## 快速开始
 
+要求 Python 3.9 或更高版本。
+
+### Windows（推荐）
+
+双击 `run.bat`，脚本会自动创建虚拟环境、安装依赖并启动服务。
+
+### Linux / macOS
+
 ```bash
-pip install -r requirements.txt          # 建议同时装 rapidocr-onnxruntime
-bash run.sh                              # 或 python3 app.py -p 5000
-# 浏览器打开 http://localhost:5000 ，右上角"网关设置 → 测试连接"先自检
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+bash run.sh
 ```
+
+启动后打开 <http://localhost:5000>，在右上角“网关设置”中填写配置并先运行“测试连接”。
 
 ### 使用官方 Claude API
 
@@ -73,10 +84,19 @@ pip install -r requirements.txt
 ## 自测
 
 ```bash
-python3 selftest.py            # 离线全链路（36 项，不需要网络 / 网关）
+python3 -m pip install -r requirements-dev.txt
+python3 selftest.py            # 离线全链路（不需要网络 / 网关）
 python3 selftest.py --live     # 内网机器上：真实网关连通 + 单页真实提取冒烟
 python3 selftest.py --live --vision   # 追加视觉链路探测
 ```
+
+每次推送或提交 Pull Request 时，GitHub Actions 也会自动运行离线全链路自测。
+
+## 安全说明
+
+- Token 只通过页面或环境变量提供，不要写入代码或提交到 Git。
+- `.env`、上传文件和导出结果已在 `.gitignore` 中排除。
+- 默认服务面向本地使用；若要暴露到公网，请先增加身份认证、HTTPS、持久化任务存储和访问限流。
 
 ### 离线测试说明
 

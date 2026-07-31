@@ -12,7 +12,7 @@ selftest.py —— 全链路自测  v7
     python3 selftest.py --live            # 文本链路：连通 + 单页真实提取
     python3 selftest.py --live --vision   # 追加视觉链路探测
   网关取环境变量 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / CLAUDE_MODEL；
-  想对照 Claude：把三者指向 https://api.claude.com/ 兼容端点与 claude 模型即可。
+  想对照 Claude：把三者指向 https://api.anthropic.com 与 Claude 模型即可。
 """
 import io
 import re

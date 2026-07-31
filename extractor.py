@@ -26,8 +26,8 @@ from merge import to_num
 
 logger = logging.getLogger('extractor')
 
-MAX_TOKENS_CAP = int(os.environ.get('MAX_TOKENS_CAP', '131072'))
-HARD_TOKENS_CAP = int(os.environ.get('HARD_TOKENS_CAP', '131072'))
+MAX_TOKENS_CAP = int(os.environ.get('MAX_TOKENS_CAP', '16384'))
+HARD_TOKENS_CAP = int(os.environ.get('HARD_TOKENS_CAP', '32768'))
 
 _TYPE_TOKEN = {
     'text': '"字符串"或null',
