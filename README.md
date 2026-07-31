@@ -1,30 +1,30 @@
-# 票据智能提取台 v7
+# 票据提取与 Excel 导出
 
-> AI 驱动的轻量化通用票据管理平台 — 上传票据 PDF，AI 自动识别、提取字段、跨页合并、算术校验，一键导出三表 Excel。
+这是一个本地运行的票据整理工具。上传 PDF 后，程序会识别票据内容、按配置提取字段、合并跨页记录，并把结果导出为 Excel。
 
-上传任意 PDF 票据（电子件 / 扫描件 / 混合多页、一份文件里混多张单据都行），
-AI 识别文档类型并推荐字段方案 → 可视化编辑 → 批量提取 → 跨页合并 →
-本地算术校验 → 不一致自动 AI 复核 → 导出三表 Excel。
+项目适合处理电子 PDF、扫描件以及混合多页文件。文字识别和字段提取需要连接支持 Anthropic Messages 协议的模型服务。
 
-AI 只依赖一个 **Anthropic Messages 协议**接口。**首次使用前需要在浏览器右上角"网关设置"中填写网关地址、Token 和模型名**，也可以在启动前设置环境变量。
+## 主要功能
 
-## 功能特性
+- 批量上传和处理 PDF
+- 根据票据内容推荐提取字段
+- 支持电子件和扫描件
+- 合并同一单据的跨页内容
+- 核对合计值与明细金额
+- 导出汇总、明细、校验三个 Excel 工作表
+- 支持自定义 Anthropic 兼容网关
 
-- 自动识别票据类型并推荐字段提取方案
-- 支持电子件、扫描件、混合多页票据
-- AI 智能提取 + 可视化编辑
-- 跨页单据自动合并
-- 本地算术校验 + 不一致自动 AI 复核
-- 一键导出三表 Excel（汇总 / 明细 / 校验）
-- 兼容任意 Anthropic Messages 协议网关（内网 / 官方端点通用）
+## 运行环境
+
+- Python 3.9 或更高版本
+- 可访问的 Anthropic 兼容模型服务
+- 处理扫描件时建议安装 `rapidocr-onnxruntime`
 
 ## 快速开始
 
-要求 Python 3.9 或更高版本。
+### Windows
 
-### Windows（推荐）
-
-双击 `run.bat`，脚本会自动创建虚拟环境、安装依赖并启动服务。
+双击 `run.bat`。脚本会创建虚拟环境、安装依赖并启动服务。
 
 ### Linux / macOS
 
@@ -35,134 +35,99 @@ python3 -m pip install -r requirements.txt
 bash run.sh
 ```
 
-启动后打开 <http://localhost:5000>，在右上角“网关设置”中填写配置并先运行“测试连接”。
+启动后访问 <http://localhost:5000>，在页面右上角填写网关地址、Token 和模型名，然后先测试连接。
 
-### 使用官方 Claude API
+也可以通过环境变量提供配置：
 
 ```bash
 export ANTHROPIC_BASE_URL="https://api.anthropic.com"
-export ANTHROPIC_AUTH_TOKEN="sk-ant-…"
-export CLAUDE_MODEL="claude-sonnet-4-6"
+export ANTHROPIC_AUTH_TOKEN="你的 Token"
+export CLAUDE_MODEL="你的模型名"
 bash run.sh
 ```
 
-## 安装依赖
+## 使用流程
 
-```bash
-pip install -r requirements.txt
-```
-
-### 可选依赖
-
-| 依赖 | 用途 |
-|---|---|
-| `rapidocr-onnxruntime` | 本地 OCR，扫描件质量大幅提升 |
-| `json_repair` | 更强的坏 JSON 修复（内置修复已覆盖常见情况） |
-| `reportlab` | 仅自测需要，生成中文样例 PDF |
+1. 上传一个或多个 PDF。
+2. 选择预设方案，或让模型分析票据并生成字段方案。
+3. 检查字段名称、类型及合并规则。
+4. 开始提取，等待页面显示处理结果。
+5. 检查校验提示并下载 Excel。
 
 ## 项目结构
 
-```
+```text
 .
-├── app.py              # Flask 服务：任务编排 / SSE / 复核回路 / 下载
-├── pdf_utils.py        # 三态页判定、版式文本、精确渲染、OCR 版式重建
-├── ai_client.py        # 网关客户端：预填 / 思考抑制 / 双头认证 / JSON 容错解析
-├── extractor.py        # 单页提取引擎：提示词契约 + 失败阶梯
-├── merge.py            # 列声明解析、续页感知合并、carry、本地求和校验
-├── excel_export.py     # 汇总 / 明细 / 校验 三表导出
-├── presets.py          # 预设字段库 + 分析 / 补全提示词
-├── claude_sim.py       # 离线测试用 AI 仿真器（按真实契约工作，支持故障注入）
-├── selftest.py         # 离线全链路自测 + 内网真实网关冒烟 (--live)
+├── app.py              # Flask 服务和任务调度
+├── ai_client.py        # 模型网关客户端
+├── extractor.py        # 单页字段提取
+├── pdf_utils.py        # PDF 文本读取、页面判断和渲染
+├── merge.py            # 跨页合并与数值校验
+├── excel_export.py     # Excel 导出
+├── presets.py          # 内置字段方案
+├── claude_sim.py       # 离线测试使用的模型模拟器
+├── selftest.py         # 离线自测和在线冒烟测试
 ├── templates/
-│   └── index.html      # 前端（预设 / 字段编辑 / 测试连接 / 进度 / 结果 / 校验面板）
-├── requirements.txt    # Python 依赖
-├── run.sh              # Linux/macOS 启动脚本
-├── run.bat             # Windows 启动脚本
-└── README.md
+│   └── index.html      # 前端页面
+├── requirements.txt
+├── requirements-dev.txt
+├── run.bat
+└── run.sh
 ```
 
-## 自测
+## 字段配置
 
-```bash
-python3 -m pip install -r requirements-dev.txt
-python3 selftest.py            # 离线全链路（不需要网络 / 网关）
-python3 selftest.py --live     # 内网机器上：真实网关连通 + 单页真实提取冒烟
-python3 selftest.py --live --vision   # 追加视觉链路探测
-```
+字段方案中有几个配置会影响跨页合并和校验：
 
-每次推送或提交 Pull Request 时，GitHub Actions 也会自动运行离线全链路自测。
-
-## 安全说明
-
-- Token 只通过页面或环境变量提供，不要写入代码或提交到 Git。
-- `.env`、上传文件和导出结果已在 `.gitignore` 中排除。
-- 默认服务面向本地使用；若要暴露到公网，请先增加身份认证、HTTPS、持久化任务存储和访问限流。
-
-### 离线测试说明
-
-离线模式用 reportlab 现场生成真实中文 PDF（3 页缴款书含跨页单据、图片型送货单、
-空白页），以一个**按真实提示词契约工作的 AI 仿真器**（`claude_sim.py`）跑通
-Flask → SSE → 合并 → 校验 → 复核 → Excel 全链路，并注入四类故障验证提取阶梯：
-
-- 坏 JSON → 提醒重试
-- 输出截断 → 升额重试
-- 数值错误 → 自动复核修正
-- 网关无视觉 → 自动降级 OCR
-
-## 字段方案怎么写
-
-- **合并键**（group_key）：同一单据跨页时值相同的字段，如报关单编号。
-- **取值**（carry）：跨页合并时标量取 first/last；印在末页的"合计"用 last。
-- **求和校验**（sum_check）：填 `表key.列key`，系统本地核对 本字段 = 该列求和，
-  不一致自动复核。
-- **表格列**：在提取说明里写 `列：seq 序号, name 品名, …`（key 用英文 snake_case）。这是跨页合并与求和校验的键名基准。
+- `group_key`：同一张单据各页共有的字段，例如报关单编号。
+- `carry`：合并时保留第一页或最后一页的值，可选 `first` 或 `last`。
+- `sum_check`：检查某个字段是否等于明细列合计，格式为 `表key.列key`。
+- 表格列：列的 key 建议使用英文 `snake_case`，避免合并时出现名称不一致。
 
 ## 环境变量
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ANTHROPIC_BASE_URL` | (空) | 网关地址，**必须在前端或环境变量中填写** |
-| `ANTHROPIC_AUTH_TOKEN` | (空) | Token，**必须在前端或环境变量中填写** |
-| `CLAUDE_MODEL` | (空) | 模型名，**必须在前端或环境变量中填写** |
-| `SCAN_MAX_SIDE` / `REPAIR_IMG_SIDE` | 2000 / 2400 | 常规 / 复核渲染长边像素 |
-| `TEXT_WORKERS` / `VISION_WORKERS` | 8 / 3 | 两类请求并发 |
-| `MAX_TOKENS_CAP` / `HARD_TOKENS_CAP` | 16384 / 32768 | 常规 / 升额输出上限 |
-| `REPAIR_MAX` | 6 | 每任务最多自动复核的记录数 |
-| `AI_TIMEOUT` | 300 | 单请求超时（秒） |
+| 变量 | 默认值 | 用途 |
+|---|---:|---|
+| `ANTHROPIC_BASE_URL` | 空 | 模型网关地址 |
+| `ANTHROPIC_AUTH_TOKEN` | 空 | 模型服务 Token |
+| `CLAUDE_MODEL` | 空 | 模型名称 |
+| `SCAN_MAX_SIDE` | `2000` | 扫描页图片长边像素 |
+| `REPAIR_IMG_SIDE` | `2400` | 复核图片长边像素 |
+| `TEXT_WORKERS` | `8` | 文本任务并发数 |
+| `VISION_WORKERS` | `3` | 图片任务并发数 |
+| `MAX_TOKENS_CAP` | `16384` | 常规输出上限 |
+| `HARD_TOKENS_CAP` | `32768` | 截断重试时的输出上限 |
+| `REPAIR_MAX` | `6` | 单次任务最多复核记录数 |
+| `AI_TIMEOUT` | `300` | 单次请求超时秒数 |
 
-## v7 相比 v6 重点改进
+## 测试
 
-### 质量
+安装测试依赖并运行离线测试：
 
-| 问题（旧版） | v7 做法 |
-|---|---|
-| `extract_text()` 丢失列对齐，表格在模型眼里成一锅粥 | `layout=True` 版式文本 + 无损压缩，整页完整喂给模型，**彻底移除截断** |
-| 扫描判定只看"有没有字"，劣质文本层被当电子件 | 三态判定：整页图占比>0.7 → 按扫描件走视觉；乱码占比检测；空白页直接跳过 |
-| 渲染质量不一致，小字号金额糊掉 | 按目标长边**精确反推缩放一次渲染**（默认 2000px/q88，复核 2400px/q92） |
-| 标量与表格分两次请求，合计和明细对不上 | **单页一次请求**同时出标量+表格，合计与明细同源 |
-| `max_tokens` 截断被静默吞掉 | 检测 `stop_reason=max_tokens` → 自动升额到 32768 重试 |
-| 合计校验只报错，不修 | 不一致自动触发复核：更高清重渲 + 差额提示，修好标记"⟳已复核" |
-| 续页没印单据编号时跨页合并断链 | 续页感知合并，编号缺失但 `_is_continuation=true` 即并入 |
-| 模型偶尔用中文列名回行，并表/求和错位 | 声明式列约定 + 行键 label→key 自动重映射 |
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 selftest.py
+```
 
-### 稳健
+离线测试不需要模型服务。它会生成样例 PDF，并检查提取、跨页合并、校验、复核和 Excel 导出流程。
 
-- 中文文件名原样保留（旧版 `secure_filename` 把中文剥光 → 多文件互相覆盖）
-- 结果按 `job_id` 隔离（旧版全局 `_last`，并发时互相串档）
-- 预填 `{` 锁 JSON 输出；网关不接受 assistant 预填时自动降级
-- qwen 系思考抑制双保险
-- 网关无视觉能力：首次发现即全任务降级 OCR 文本路线
-- 坏 PDF 不拖垮同批其他文件；单页失败只标红该记录
+需要检查真实网关时，可以运行：
 
-### 速度
+```bash
+python3 selftest.py --live
+python3 selftest.py --live --vision
+```
 
-- 所有文件的所有页摊平进两个线程池并发（文本 8 / 视觉 3）
-- 每页请求数从 ≥2 降到 1（拆分只在兜底时发生）
-- 空白页零请求跳过；`max_tokens` 动态估算
+仓库中的 GitHub Actions 会在推送和 Pull Request 时运行离线测试。
 
-## 排障
+## 常见问题
 
-- **测试连接：文本 ✓ 视觉 ✗** → 网关 / 模型不支持图片。安装 `rapidocr-onnxruntime`。
-- **报"只输出了思考块"** → 网关未透传思考开关，请关闭思考或换非思考模型。
-- **响应 400 提到 assistant** → 该网关不接受预填，程序已自动降级，无需处理。
-- **提取很慢** → 确认是不是模型生成慢（`--live` 冒烟会打印单页耗时）。
+- 文本测试成功、图片测试失败：当前模型可能不支持图片。扫描件可安装 `rapidocr-onnxruntime` 后使用 OCR。
+- 网关返回与 `assistant` 相关的 400 错误：部分兼容网关不支持预填消息，程序会自动改用普通请求。
+- 提取速度较慢：耗时通常取决于模型响应速度、PDF 页数和并发设置。
+
+## 安全说明
+
+- 不要把 Token 写进代码或提交到 Git。
+- `.env`、上传文件和导出结果已加入 `.gitignore`。
+- 当前版本默认用于本地环境。部署到公网前，需要补充登录认证、HTTPS、访问限流和持久化存储。
