@@ -158,7 +158,7 @@ def offline():
     import presets as PS
     from merge import (normalize_fields, parse_columns, merge_pages, to_num)
     from extractor import coerce, norm_date
-    from claude_sim import SimAI, CommonSimAI
+    from claude_sim import SimAI, CommonSimAI, MixedSimAI
     import common_mode as CM
 
     print('\n[单元] 基础构件')
@@ -428,6 +428,42 @@ def offline():
           image_result is not None and image_result.get('records') == 1,
           image_result)
 
+    print('\n[链路5] 混合异构文档 · 先拆分分类 → 各类型专有字段分别提取')
+    APP._AI_CALL_OVERRIDE = MixedSimAI()
+    r = client.post('/api/mixed/analyze', data={
+        'files': [(io.BytesIO(tax_pdf), '合同发票混合.pdf')]})
+    d = r.get_json()
+    check('混合分析识别两类文档',
+          r.status_code == 200 and d.get('mode') == 'mixed' and
+          set(d.get('document_types', [])) == {'合同', '发票'} and
+          d.get('logical_documents') == 2, d)
+    check('混合分析按类型生成专有字段',
+          any(f.get('key') == 'contract_no' for s in d.get('schemas', [])
+              if s.get('document_type') == '合同' for f in s.get('fields', [])) and
+          any(f.get('key') == 'invoice_no' for s in d.get('schemas', [])
+              if s.get('document_type') == '发票' for f in s.get('fields', [])), d)
+    resp = client.post('/mixed/run', data={
+        'files': [(io.BytesIO(tax_pdf), '合同发票混合.pdf')]})
+    evs = sse_events(resp.data)
+    mixed_schema = next((e for e in evs if e['type'] == 'schema'), None)
+    mixed_result = next((e for e in evs if e['type'] == 'result'), None)
+    check('混合一键提取完成',
+          mixed_schema is not None and mixed_result is not None and
+          mixed_result.get('mode') == 'mixed' and mixed_result.get('records') == 2,
+          {'schema': mixed_schema, 'result': mixed_result})
+    mixed_rows = mixed_result.get('rows', []) if mixed_result else []
+    contract_row = next((x for x in mixed_rows if x.get('_schema_type') == '合同'), {})
+    invoice_row = next((x for x in mixed_rows if x.get('_schema_type') == '发票'), {})
+    check('混合结果保留合同专有字段',
+          contract_row.get('contract_no') == 'C-001' and
+          'invoice_no' not in contract_row, contract_row)
+    check('混合结果保留发票专有字段并合并续页',
+          invoice_row.get('invoice_no') == 'I-001' and
+          invoice_row.get('invoice_total') == 200 and
+          invoice_row.get('_pages') == '2+3', invoice_row)
+    dl = client.get('/download?job=' + mixed_result['job']) if mixed_result else None
+    check('混合模式Excel下载', dl is not None and dl.status_code == 200 and dl.data[:2] == b'PK')
+
     print('\n[边界] 破损文件与空字段')
     APP._AI_CALL_OVERRIDE = SimAI()
     resp = client.post('/extract', data={
@@ -448,7 +484,7 @@ def offline():
     check('首页模板渲染', r.status_code == 200
            and '票据智能提取台' in r.get_data(as_text=True)
            and '求和校验' in r.get_data(as_text=True)
-           and '不同票据统一字段' in r.get_data(as_text=True))
+           and '混合异构文档分别提取' in r.get_data(as_text=True))
 
     APP._AI_CALL_OVERRIDE = None
 

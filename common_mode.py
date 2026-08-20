@@ -32,7 +32,11 @@ INVENTORY_SYSTEM = """你是通用文档字段观察器。分析当前单页，�
 只输出一个 JSON 对象，不要 markdown 或解释：
 {
   "document_type": "根据本页内容得到的简短文档类别；无法判断则为未知",
+  "document_no": "本逻辑文档最稳定的原始编号；本页没有则为null",
   "page_role": "first|continuation|single|unknown",
+  "page_summary": "不超过60字的本页角色和内容摘要",
+  "identity_hints": [{"label":"身份线索原名", "value":"原值", "role":"该线索如何标识文档"}],
+  "confidence": "high|medium|low",
   "fields": [
     {"source_label":"页面原字段名或栏目名", "semantic":"该字段在当前文档中的业务含义",
      "type":"text|number|date|checkbox|multiline|table", "example":"页面上的简短示例值或null",

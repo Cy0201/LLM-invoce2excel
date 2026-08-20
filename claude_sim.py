@@ -159,6 +159,120 @@ class CommonSimAI(object):
         return SimAI()(kind, system, user, max_tokens, image_b64)
 
 
+class MixedSimAI(object):
+    """混合异构模式的离线契约模拟器。
+
+    它故意给不同页面返回不同文档类型和不同字段，验证流程确实是“先拆分、
+    再按类型建模”，而不是把所有页面压成一套公共字段。
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, kind, system, user, max_tokens, image_b64=None):
+        page_key = _page_key(user)
+        self.calls.append((kind, page_key, int(max_tokens)))
+        if system.startswith('你是通用文档字段观察器'):
+            page = page_key[1]
+            if page == 1:
+                data = {
+                    'document_type': '合同', 'document_no': 'C-001',
+                    'page_role': 'single', 'page_summary': '合同首页及签署信息',
+                    'identity_hints': [{'label': '合同编号', 'value': 'C-001',
+                                        'role': '本合同唯一编号'}],
+                    'confidence': 'high',
+                    'fields': [{'source_label': '协议编号', 'semantic': '合同编号',
+                                'type': 'text', 'example': 'C-001'},
+                               {'source_label': '甲方', 'semantic': '甲方名称',
+                                'type': 'text', 'example': '甲公司'}]}
+            else:
+                data = {
+                    'document_type': '发票', 'document_no': 'I-001' if page == 2 else None,
+                    'page_role': 'first' if page == 2 else 'continuation',
+                    'page_summary': '发票首页' if page == 2 else '发票明细续页',
+                    'identity_hints': [{'label': '发票号码', 'value': 'I-001',
+                                        'role': '本张发票号码'}] if page == 2 else [],
+                    'confidence': 'high',
+                    'fields': [{'source_label': '发票号码', 'semantic': '发票号码',
+                                'type': 'text', 'example': 'I-001'},
+                               {'source_label': '价税合计', 'semantic': '价税合计金额',
+                                'type': 'number', 'example': '200'}]}
+            return json.dumps(data, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是跨格式文档字段建模器'):
+            try:
+                payload = json.loads(user)
+                raw = json.dumps(payload, ensure_ascii=False)
+            except Exception:
+                raw = user
+            if re.search(r'"document_type"\s*:\s*"合同"', raw):
+                data = {
+                    'summary': '合同字段方案', 'document_types': ['合同'],
+                    'fields': [
+                        {'key': 'contract_no', 'label': '合同编号', 'type': 'text',
+                         'description': '合同或协议的唯一编号', 'source_variants': ['协议编号'],
+                         'coverage': 1, 'merge_confidence': 'high'},
+                        {'key': 'party_a', 'label': '甲方名称', 'type': 'text',
+                         'description': '合同中的甲方主体', 'source_variants': ['甲方'],
+                         'coverage': 1, 'merge_confidence': 'high'},
+                    ]}
+            else:
+                data = {
+                    'summary': '发票字段方案', 'document_types': ['发票'],
+                    'fields': [
+                        {'key': 'invoice_no', 'label': '发票号码', 'type': 'text',
+                         'description': '本张发票的号码', 'source_variants': ['发票号码'],
+                         'coverage': 1, 'merge_confidence': 'high'},
+                        {'key': 'invoice_total', 'label': '价税合计', 'type': 'number',
+                         'description': '发票最终价税合计金额', 'source_variants': ['价税合计'],
+                         'coverage': 1, 'merge_confidence': 'high'},
+                    ]}
+            return json.dumps(data, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是通用文档分页与边界复核器'):
+            payload = json.loads(user)
+            out = []
+            for item in payload.get('pages') or []:
+                page = int(item.get('page'))
+                is_cont = page == 3 or item.get('initial_page_role') == 'continuation'
+                out.append({
+                    'page': page, 'anchor_page': 2 if is_cont else page,
+                    'document_type': '合同' if page == 1 else '发票',
+                    'document_no': 'C-001' if page == 1 else ('I-001' if page == 2 else None),
+                    'confidence': 'high', 'reason': '模拟器按类型与续页信号拆分',
+                })
+            return json.dumps({'pages': out}, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是异构文档统一字段提取器'):
+            page = page_key[1]
+            if 'contract_no' in system:
+                out = {
+                    '_document_type': '合同', '_document_no': 'C-001',
+                    '_page_role': 'single', '_confidence': 'high',
+                    'contract_no': {'value': 'C-001', 'source_label': '协议编号',
+                                    'evidence': '协议编号：C-001', 'confidence': 'high',
+                                    'status': 'found'},
+                    'party_a': {'value': '甲公司', 'source_label': '甲方',
+                                'evidence': '甲方：甲公司', 'confidence': 'high',
+                                'status': 'found'},
+                }
+            else:
+                out = {
+                    '_document_type': '发票', '_document_no': 'I-001' if page == 2 else None,
+                    '_page_role': 'first' if page == 2 else 'continuation',
+                    '_confidence': 'high',
+                    'invoice_no': {'value': 'I-001' if page == 2 else None,
+                                   'source_label': '发票号码' if page == 2 else None,
+                                   'evidence': '发票号码：I-001' if page == 2 else None,
+                                   'confidence': 'high',
+                                   'status': 'found' if page == 2 else 'not_found'},
+                    'invoice_total': {'value': None if page == 2 else 200,
+                                      'source_label': '价税合计' if page == 3 else None,
+                                      'evidence': '价税合计：200' if page == 3 else None,
+                                      'confidence': 'high',
+                                      'status': 'found' if page == 3 else 'not_found'},
+                }
+            return json.dumps(out, ensure_ascii=False), 'end_turn'
+        return SimAI()(kind, system, user, max_tokens, image_b64)
+
+
 class ThinkingOnceClient(object):
     """测试 AIClient 的仅思考自动重试，不发网络请求。"""
 

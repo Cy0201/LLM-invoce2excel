@@ -24,7 +24,7 @@ import logging
 import threading
 import traceback
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import (Flask, render_template, request, jsonify, Response,
                    send_file, make_response)
@@ -36,7 +36,8 @@ from extractor import extract_page, repair_note_for
 from merge import normalize_fields, merge_pages, splice_results
 from excel_export import write_excel
 import common_mode as CM
-from common_export import write_common_excel
+import mixed_mode as MM
+from common_export import write_common_excel, write_mixed_excel
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
@@ -331,6 +332,257 @@ def _discover_common_from_pfs(pfs, cfg, emit=None):
     if emit:
         emit({'type': 'progress', 'message': '分批归纳并合并公共字段…', 'pct': 32})
     return CM.discover_from_inventories(ai, inventories), refs
+
+
+def _observe_mixed_loaded(loaded, cfg, emit=None):
+    """混合模式：观察全部非空页面，再做边界复核和按类型字段建模。"""
+    pfs, bad = _scan_common_loaded(loaded)
+    if not pfs:
+        raise ValueError('没有可解析的 PDF 或图片')
+    ai = _make_ai_call(cfg)
+    caps = {'vision': True}
+    tasks = [(pf, idx) for pf in pfs for idx in range(pf.page_count)]
+    pages, lock = [], threading.Lock()
+
+    def observe_one(pf, idx):
+        page = pf.pages[idx]
+        if page.kind == 'blank':
+            return {'_filename': pf.name, '_page': idx + 1, '_blank': True,
+                    '_kind': 'blank', '_source_pf': pf, '_source_idx': idx}
+        try:
+            image_b64, ocr_hint = None, ''
+            if page.kind != 'native':
+                image = pf.render(idx, target_side=ANALYZE_IMG_SIDE)
+                image_b64 = P.pil_to_b64(image, max_side=ANALYZE_IMG_SIDE, quality=85)
+                ocr_hint = P.ocr_layout(image) or page.hint
+            item = CM.observe_page(
+                ai, kind=page.kind, fname=pf.name, page_no=idx + 1,
+                total=pf.page_count, text=page.text or page.hint,
+                image_b64=image_b64, ocr_hint=ocr_hint, caps=caps,
+                ctx='[混合文档观察 %s p%d] ' % (pf.name, idx + 1))
+            return MM.page_from_inventory(
+                item, filename=pf.name, page_no=idx + 1, kind=page.kind,
+                pf=pf, idx=idx)
+        except Exception as e:
+            return {'_filename': pf.name, '_page': idx + 1, '_kind': page.kind,
+                    '_error': '%s: %s' % (type(e).__name__, str(e)[:220]),
+                    '_source_pf': pf, '_source_idx': idx}
+
+    text_tasks = [(pf, i) for pf, i in tasks if pf.pages[i].kind == 'native']
+    vision_tasks = [(pf, i) for pf, i in tasks if pf.pages[i].kind == 'scanned']
+    pools = []
+    if text_tasks:
+        pools.append((ThreadPoolExecutor(max_workers=max(1, min(TEXT_WORKERS, len(text_tasks)))),
+                      text_tasks))
+    if vision_tasks:
+        pools.append((ThreadPoolExecutor(max_workers=max(1, min(VISION_WORKERS, len(vision_tasks)))),
+                      vision_tasks))
+    futures = []
+    for pool, work in pools:
+        futures.extend(pool.submit(observe_one, pf, idx) for pf, idx in work)
+    finished = 0
+    for future in as_completed(futures):
+        pages.append(future.result())
+        finished += 1
+        if emit:
+            emit({'type': 'progress', 'message': 'AI识别混合文档页面 %d/%d…' %
+                  (finished, len(tasks)), 'pct': 5 + int(35 * finished / max(1, len(tasks)))})
+    for pool, _work in pools:
+        pool.shutdown()
+    # 空白页不需要调用 AI，但要保留在页级清单里，让前端进度和结果页数与实际上传内容一致。
+    pages.extend(observe_one(pf, idx) for pf, idx in tasks
+                 if pf.pages[idx].kind == 'blank')
+    pages.sort(key=lambda p: (str(p.get('_filename', '')), int(p.get('_page', 0))))
+    segment_issues = CM.refine_document_boundaries(
+        ai, pages, [], ctx='[混合文档边界复核] ')
+    if emit:
+        emit({'type': 'progress', 'message': '按文档类型分别总结字段…', 'pct': 45})
+    schemas = MM.discover_type_schemas(ai, pages, ctx='[混合文档字段总结] ')
+    return pfs, bad, pages, schemas, segment_issues, ai
+
+
+def _mixed_schema_json(schemas):
+    return [{'document_type': s.get('document_type', '未知'),
+             'summary': s.get('summary', ''),
+             'sampled_pages': s.get('sampled_pages', 0),
+             'fields': s.get('fields', [])} for s in schemas]
+
+
+@app.route('/api/mixed/analyze', methods=['POST'])
+def api_mixed_analyze():
+    """混合模式只做分类、拆分和按类型字段方案预览，不提取结果。"""
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    pfs = []
+    try:
+        pfs, bad, pages, schemas, segment_issues, _ai = _observe_mixed_loaded(
+            loaded, _cfg_from(request))
+        nonblank = [p for p in pages if not p.get('_blank')]
+        anchors = {(p.get('_filename'), p.get('_segment_anchor') or p.get('_page'))
+                   for p in nonblank}
+        return jsonify({
+            'mode': 'mixed', 'schemas': _mixed_schema_json(schemas),
+            'document_types': [s.get('document_type') for s in schemas],
+            'logical_documents': len(anchors), 'boundary_issues': segment_issues,
+            'pages': {'total': sum(len(pf.pages) for pf in pfs),
+                      'native': sum(x.kind == 'native' for pf in pfs for x in pf.pages),
+                      'scanned': sum(x.kind == 'scanned' for pf in pfs for x in pf.pages),
+                      'blank': sum(x.kind == 'blank' for pf in pfs for x in pf.pages)},
+            'files': len(pfs),
+            'bad_files': [{'filename': n, 'error': e[:180]} for n, e in bad],
+        })
+    except Exception as e:
+        logger.warning('混合文档分析失败: %s', traceback.format_exc())
+        return jsonify({'error': '混合文档分析失败：%s' % str(e)[:300]}), 500
+    finally:
+        for pf in pfs:
+            pf.close()
+
+
+def _run_mixed_extraction(job_id, loaded, pfs, bad, pages, schemas,
+                          segment_issues, ai, cfg, emit):
+    """按已确认的逻辑文档类型分别调用字段方案。"""
+    caps = {'vision': True}
+    tasks = [p for p in pages]
+    total = len(tasks)
+    emit({'type': 'start', 'mode': 'mixed', 'total_pages': total,
+          'files': len(pfs), 'blank_pages': sum(p.get('_blank', False) for p in pages),
+          'ocr': P.ocr_available(), 'job': job_id})
+    results, done, lock = [], [0], threading.Lock()
+
+    def run_page(page):
+        if page.get('_blank'):
+            return page
+        if page.get('_error'):
+            return page
+        schema = MM.schema_for(schemas, page.get('_document_type'))
+        if not schema or not schema.get('fields'):
+            page['_error'] = 'AI 未为文档类型《%s》生成字段方案' % page.get('_document_type', '未知')
+            return page
+        pf, idx = page.get('_source_pf'), page.get('_source_idx')
+        kind = page.get('_kind') or 'native'
+        ctx = '[混合文档提取 %s p%d] ' % (page.get('_filename'), page.get('_page'))
+        try:
+            if kind == 'native':
+                data = CM.common_extract_page(
+                    schema['fields'], ai, kind='native', fname=pf.name,
+                    page_no=idx + 1, total=pf.page_count,
+                    text=pf.pages[idx].text, caps=caps,
+                    document_types=[schema.get('document_type')], ctx=ctx)
+            else:
+                img = pf.render(idx)
+                data = CM.common_extract_page(
+                    schema['fields'], ai, kind='scanned', fname=pf.name,
+                    page_no=idx + 1, total=pf.page_count, text=pf.pages[idx].hint,
+                    image_b64=P.pil_to_b64(img), ocr_hint=P.ocr_layout(img),
+                    caps=caps, document_types=[schema.get('document_type')], ctx=ctx)
+            # 边界阶段已经看过全页，提取阶段不得自行改类型或拆分结果。
+            for key in ('_document_type', '_document_no', '_segment_anchor',
+                        '_segment_confidence', '_segment_reason', '_page_role',
+                        '_is_continuation', '_page_summary', '_identity_hints'):
+                if key in page:
+                    data[key] = page[key]
+            data['_schema_type'] = schema.get('document_type')
+            data['_page'] = page.get('_page')
+            data['_filename'] = page.get('_filename')
+            return data
+        except Exception as e:
+            page['_error'] = '%s: %s' % (type(e).__name__, str(e)[:220])
+            return page
+
+    text_pages = [p for p in tasks if p.get('_kind') == 'native' and
+                  not p.get('_blank') and not p.get('_error')]
+    vision_pages = [p for p in tasks if p.get('_kind') == 'scanned' and
+                    not p.get('_blank') and not p.get('_error')]
+    pools = []
+    if text_pages:
+        pools.append((ThreadPoolExecutor(max_workers=max(1, min(TEXT_WORKERS, len(text_pages)))),
+                      text_pages))
+    if vision_pages:
+        pools.append((ThreadPoolExecutor(max_workers=max(1, min(VISION_WORKERS, len(vision_pages)))),
+                      vision_pages))
+    futures = []
+    for pool, work in pools:
+        futures.extend(pool.submit(run_page, p) for p in work)
+    for p in tasks:
+        if p.get('_blank') or p.get('_error'):
+            results.append(p)
+            done[0] += 1
+            emit({'type': 'page', 'mode': 'blank' if p.get('_blank') else 'error',
+                  'filename': p.get('_filename', ''), 'page': p.get('_page', 0),
+                  'current': done[0], 'total_pages': total,
+                  'error': p.get('_error')})
+    for future in as_completed(futures):
+        results.append(future.result())
+        with lock:
+            done[0] += 1
+            current = done[0]
+        page_mode = 'error' if results[-1].get('_error') else results[-1].get('_kind', 'native')
+        emit({'type': 'page', 'mode': page_mode, 'filename': results[-1].get('_filename', ''),
+              'page': results[-1].get('_page', 0), 'current': current,
+              'total_pages': total, 'error': results[-1].get('_error')})
+    for pool, _work in pools:
+        pool.shutdown()
+    emit({'type': 'progress', 'message': '按文档类型和边界分别归组…', 'pct': 96})
+    records, issues = MM.assemble_pages(results, schemas, segment_issues)
+    for pf in pfs:
+        pf.close()
+    _store_job(job_id, {'mode': 'mixed', 'records': records, 'schemas': schemas,
+                        'issues': issues, 'validations': []})
+    emit({'type': 'result', 'mode': 'mixed', 'job': job_id,
+          'total_pages': total, 'records': len(records), 'issues': issues,
+          'schemas': _mixed_schema_json(schemas),
+          'rows': MM.rows(records, schemas)})
+
+
+@app.route('/mixed/run', methods=['POST'])
+def mixed_run():
+    """一键：全页识别 → 文档拆分 → 按类型总结字段 → 分类型提取。"""
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    cfg = _cfg_from(request)
+    job_id = uuid.uuid4().hex[:12]
+
+    def generate():
+        q = queue.Queue()
+
+        def worker():
+            pfs = []
+            try:
+                q.put(_sse({'type': 'progress', 'message': '扫描并识别混合文档页面…', 'pct': 2}))
+                pfs, bad, pages, schemas, segment_issues, ai = _observe_mixed_loaded(
+                    loaded, cfg, lambda o: q.put(_sse(o)))
+                if not schemas:
+                    raise ValueError('没有识别出可用的文档类型和字段方案')
+                q.put(_sse({'type': 'schema', 'mode': 'mixed',
+                            'schemas': _mixed_schema_json(schemas),
+                            'document_types': [s.get('document_type') for s in schemas]}))
+                _run_mixed_extraction(job_id, loaded, pfs, bad, pages, schemas,
+                                      segment_issues, ai, cfg,
+                                      lambda o: q.put(_sse(o)))
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                q.put(_sse({'type': 'error', 'message': str(e)[:400]}))
+                for pf in pfs:
+                    pf.close()
+            finally:
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
 # ══════════════════════════════════════════════════════════════
@@ -778,6 +1030,10 @@ def download():
     if job.get('mode') == 'common':
         data = write_common_excel(job['records'], job['fields'], job.get('issues', []))
         filename = '统一字段提取结果.xlsx'
+    elif job.get('mode') == 'mixed':
+        data = write_mixed_excel(job['records'], job.get('schemas', []),
+                                 job.get('issues', []))
+        filename = '混合文档分类提取结果.xlsx'
     else:
         data = write_excel(job['records'], job['fields'], job['validations'])
         filename = '提取结果.xlsx'

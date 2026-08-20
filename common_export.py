@@ -144,6 +144,115 @@ def write_common_excel(records, fields, issues):
     return buf.getvalue()
 
 
+def write_mixed_excel(records, schemas, issues):
+    """混合异构模式导出：索引、按类型汇总、按类型明细和异常。"""
+    wb = openpyxl.Workbook()
+    index = wb.active
+    index.title = '文档索引'
+    _header(index, ['文档ID', '来源文件', '页码', '文档类型', '文档编号',
+                    '字段方案', '提取置信度', '边界置信度', '状态'])
+    for r, rec in enumerate(records, 2):
+        meta = rec.get('_field_meta') or {}
+        ambiguous = any(m.get('status') == 'ambiguous' for m in meta.values())
+        boundary_low = rec.get('_segmentation_confidence') == 'low'
+        vals = [rec.get('_document_id', ''), rec.get('_filename', ''),
+                str(rec.get('_pages', '')), rec.get('_schema_type') or rec.get('_document_type', ''),
+                rec.get('_document_no') or '', rec.get('_schema_type', ''),
+                rec.get('_confidence', ''), rec.get('_segmentation_confidence', ''),
+                '失败' if rec.get('_error') else
+                ('待复核' if ambiguous or boundary_low else '完成')]
+        for c, value in enumerate(vals, 1):
+            cell = index.cell(r, c, str(value))
+            cell.font = Font(size=9)
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            if ambiguous or boundary_low:
+                cell.fill = _WARN
+            elif r % 2 == 0:
+                cell.fill = _ALT
+    for i, width in enumerate([16, 26, 14, 20, 22, 20, 12, 12, 12], 1):
+        index.column_dimensions[get_column_letter(i)].width = width
+
+    used = set(wb.sheetnames)
+    for schema in schemas:
+        dtype = schema.get('document_type') or '未知'
+        fields = schema.get('fields') or []
+        type_records = [r for r in records if
+                        str(r.get('_schema_type') or r.get('_document_type')) == str(dtype)]
+        title = _sheet_title('汇总-' + dtype, used)
+        used.add(title)
+        ws = wb.create_sheet(title)
+        _header(ws, ['文档ID', '来源文件', '页码', '文档编号'] +
+                [f['label'] for f in fields] + ['置信度', '边界置信度', '状态'])
+        for rr, rec in enumerate(type_records, 2):
+            meta = rec.get('_field_meta') or {}
+            ambiguous = any(m.get('status') == 'ambiguous' for m in meta.values())
+            vals = [rec.get('_document_id', ''), rec.get('_filename', ''),
+                    str(rec.get('_pages', '')), rec.get('_document_no') or '']
+            vals += [('%d行' % len(rec.get(f['key']) or [])) if f['type'] == 'table'
+                     else (rec.get(f['key']) if rec.get(f['key']) is not None else '')
+                     for f in fields]
+            vals += [rec.get('_confidence', ''), rec.get('_segmentation_confidence', ''),
+                     '失败' if rec.get('_error') else ('待复核' if ambiguous else '完成')]
+            for c, value in enumerate(vals, 1):
+                cell = ws.cell(rr, c, str(value))
+                cell.font = Font(size=9)
+                cell.alignment = Alignment(vertical='top', wrap_text=True)
+                if ambiguous or rec.get('_segmentation_confidence') == 'low':
+                    cell.fill = _WARN
+                elif rr % 2 == 0:
+                    cell.fill = _ALT
+        for i, width in enumerate([16, 26, 14, 22] + [18] * len(fields) + [12, 12, 12], 1):
+            ws.column_dimensions[get_column_letter(i)].width = width
+
+        for field in (f for f in fields if f.get('type') == 'table'):
+            dtitle = _sheet_title('%s-%s' % (dtype, field['label']), used)
+            used.add(dtitle)
+            detail = wb.create_sheet(dtitle)
+            columns = field.get('columns') or []
+            _header(detail, ['文档ID', '来源文件', '页码', '文档编号'] +
+                    [c['label'] for c in columns])
+            rr = 2
+            for rec in type_records:
+                for row in rec.get(field['key']) or []:
+                    vals = [rec.get('_document_id', ''), rec.get('_filename', ''),
+                            str(rec.get('_pages', '')), rec.get('_document_no') or '']
+                    vals += [row.get(c['key'], '') for c in columns]
+                    for c, value in enumerate(vals, 1):
+                        cell = detail.cell(rr, c, str(value))
+                        cell.font = Font(size=9)
+                        cell.alignment = Alignment(vertical='top', wrap_text=True)
+                    rr += 1
+
+    boundary = wb.create_sheet('文档边界')
+    _header(boundary, ['文档ID', '来源文件', '页码', '文档类型', '边界置信度', '判断依据'])
+    for rr, rec in enumerate(records, 2):
+        vals = [rec.get('_document_id', ''), rec.get('_filename', ''),
+                str(rec.get('_pages', '')), rec.get('_schema_type') or '',
+                rec.get('_segmentation_confidence', ''), rec.get('_segmentation_reason', '')]
+        for c, value in enumerate(vals, 1):
+            cell = boundary.cell(rr, c, str(value))
+            cell.font = Font(size=9)
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            if rec.get('_segmentation_confidence') == 'low':
+                cell.fill = _WARN
+    for i, width in enumerate([16, 26, 14, 20, 12, 60], 1):
+        boundary.column_dimensions[get_column_letter(i)].width = width
+
+    if issues:
+        ws = wb.create_sheet('异常记录')
+        _header(ws, ['文档ID', '字段/阶段', '说明'])
+        for rr, issue in enumerate(issues, 2):
+            for c, value in enumerate([issue.get('document_id', ''), issue.get('field', ''),
+                                       issue.get('message', '')], 1):
+                cell = ws.cell(rr, c, str(value))
+                cell.font = Font(size=9)
+                cell.fill = _WARN
+                cell.alignment = Alignment(vertical='top', wrap_text=True)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def _sheet_title(raw, used):
     title = ''.join('_' if ch in '[]:*?/\\' else ch for ch in str(raw))[:31] or '明细'
     base, n = title, 2

@@ -78,6 +78,11 @@ select:focus,input:focus,textarea:focus{border-color:var(--yellow-2)}
 #docType{display:none;margin-bottom:10px;font-size:13px}
 #docType .dt{background:var(--yellow-soft);border:1px solid #EFDFA6;border-radius:9px;
   padding:5px 12px;display:inline-block}
+#mixedSchemaPreview{display:none;margin:8px 0 12px;gap:8px;flex-wrap:wrap}
+.mixed-schema{border:1px solid var(--line);border-radius:10px;background:#FCFAF4;padding:9px 11px;
+  min-width:220px;flex:1 1 220px}
+.mixed-schema b{color:var(--ink)}
+.mixed-schema div{color:var(--sub);font-size:12px;line-height:1.65;margin-top:3px}
 table.fields{width:100%;border-collapse:collapse;font-size:13px}
 table.fields th{font-size:11.5px;color:var(--sub);font-weight:600;text-align:left;
   padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -173,11 +178,15 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
     <div class="mode-grid">
       <label class="mode-card active" data-mode="same">
         <input type="radio" name="mode" value="same" checked>
-        <div><b>同类票据精准提取</b><span>保留现有流程，适合相同类型或统一版式的批量票据。</span></div>
+        <div><b>固定格式精准提取</b><span>保留现有流程，适合同一种版式的批量票据，字段可编辑、跨页可合并。</span></div>
       </label>
       <label class="mode-card" data-mode="common">
         <input type="radio" name="mode" value="common">
-        <div><b>不同票据统一字段</b><span>AI 从不同类型、语言和版式中总结公共字段，再统一提取。</span></div>
+        <div><b>同类票据跨版式提取</b><span>例如不同银行的对账单：AI 按业务含义统一字段和交易明细，不依赖固定位置。</span></div>
+      </label>
+      <label class="mode-card" data-mode="mixed">
+        <input type="radio" name="mode" value="mixed">
+        <div><b>混合异构文档分别提取</b><span>合同、发票、发货单混在一起时，先自动拆分分类，再分别保留各类型专有字段。</span></div>
       </label>
     </div>
   </section>
@@ -207,6 +216,7 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
     <div class="step-h"><div class="badge-n">2</div><b>字段方案</b>
       <span class="hint">可随意修改；表格字段在"提取说明"里写「列：key 中文名, …」</span></div>
     <div id="docType"><span class="dt"></span></div>
+    <div id="mixedSchemaPreview"></div>
     <div style="overflow:auto">
     <table class="fields"><thead><tr>
       <th style="width:110px">key</th><th style="width:110px">名称</th>
@@ -224,8 +234,10 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
     <div class="f-note" id="sameNote">合并键：跨页单据靠它拼回一条记录（如报关单编号）；即使续页没印编号，AI
       也会按"续页"语义自动并入上一条。取值 last 适合印在末页的合计。求和校验为本地算术核对，
       不一致会自动触发一轮 AI 复核。</div>
-    <div class="f-note" id="commonNote" style="display:none">AI 根据所有代表页的业务语义归并字段和明细列，
-      再结合全文顺序复核文档边界。字段名称、语言和位置可以不同；结果保留原字段名、证据和置信度。</div>
+    <div class="f-note" id="commonNote" style="display:none">AI 根据同一类票据的业务语义归并字段和明细列，
+      再结合全文顺序复核文档边界。字段名称、语言、位置和表格结构可以不同；结果保留原字段名、证据和置信度。</div>
+    <div class="f-note" id="mixedNote" style="display:none">AI 先识别每页所属类型并复核逻辑文档边界，再为合同、发票、发货单等类型分别生成字段方案。
+      该模式不是只取公共字段：每种文档的专有字段和明细都会保留。</div>
   </section>
 
   <!-- ③ 提取 -->
@@ -269,7 +281,7 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
-const state={files:[],fields:[],docCtx:"",job:null,running:false,mode:"same",documentTypes:[]};
+const state={files:[],fields:[],typeSchemas:[],docCtx:"",job:null,running:false,mode:"same",documentTypes:[]};
 const TYPES=["text","number","date","checkbox","table","multiline"];
 const LS_SET="v7_gateway",LS_PRESET="v7_presets";
 
@@ -278,20 +290,26 @@ document.querySelectorAll('.mode-card').forEach(card=>card.onclick=()=>{
   if(state.running)return;
   document.querySelectorAll('.mode-card').forEach(x=>x.classList.remove('active'));
   card.classList.add('active');card.querySelector('input').checked=true;
-  state.mode=card.dataset.mode;state.fields=[];state.documentTypes=[];state.docCtx="";
-  $("#presetSel").value="";$("#docType").style.display="none";$("#pagesSum").textContent="";
-  const common=state.mode==="common";
-  document.querySelectorAll('.same-only').forEach(x=>x.style.display=common?'none':'');
-  $("#sameNote").style.display=common?'none':'block';
+  state.mode=card.dataset.mode;state.fields=[];state.typeSchemas=[];state.documentTypes=[];state.docCtx="";
+  $("#presetSel").value="";$("#docType").style.display="none";
+  $("#mixedSchemaPreview").style.display="none";$("#mixedSchemaPreview").innerHTML="";
+  $("#pagesSum").textContent="";
+  const same=state.mode==="same", common=state.mode==="common", mixed=state.mode==="mixed";
+  document.querySelectorAll('.same-only').forEach(x=>x.style.display=same?'':'none');
+  $("#sameNote").style.display=same?'block':'none';
   $("#commonNote").style.display=common?'block':'none';
+  $("#mixedNote").style.display=mixed?'block':'none';
   $("#btnAnalyze").innerHTML=common?
-    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 总结公共字段':
+    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 总结同类字段':mixed?
+    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 分析类型与字段':
     '<i class="fa-solid fa-magnifying-glass"></i> AI 识别文档 · 推荐字段';
   $("#btnRun").innerHTML=common?
-    '<i class="fa-solid fa-layer-group"></i> 一键总结并统一提取':
+    '<i class="fa-solid fa-layer-group"></i> 一键统一提取':mixed?
+    '<i class="fa-solid fa-layer-group"></i> 一键拆分并分别提取':
     '<i class="fa-solid fa-bolt"></i> 开始提取';
   $("#btnXlsx").innerHTML=common?
-    '<i class="fa-solid fa-file-excel"></i> 下载 Excel（统一汇总/字段证据/异常）':
+    '<i class="fa-solid fa-file-excel"></i> 下载 Excel（统一汇总/字段证据/异常）':mixed?
+    '<i class="fa-solid fa-file-excel"></i> 下载 Excel（分类汇总/明细/边界）':
     '<i class="fa-solid fa-file-excel"></i> 下载 Excel（汇总/明细/校验）';
   renderFields();
 });
@@ -378,10 +396,10 @@ function renderFields(){
         <textarea data-k="description" rows="1">${esc(f.description||"")}</textarea>
         ${f.type==="table"&&f.columns&&f.columns.length?`<div class="hint" style="margin-top:3px">统一列：${f.columns.map(c=>esc((c.key||"")+" "+(c.label||""))).join("、")}</div>`:""}</div>
         <button class="mini" data-act="ai" title="AI 补全提取说明"><i class="fa-solid fa-wand-magic-sparkles"></i>AI</button></div></td>
-      <td class="ctr same-only" ${state.mode==="common"?'style="display:none"':''}><input type="checkbox" class="gk-check" data-k="group_key" ${f.group_key?"checked":""}></td>
-      <td class="same-only" ${state.mode==="common"?'style="display:none"':''}><select data-k="carry"><option ${f.carry!=="last"?"selected":""}>first</option>
+      <td class="ctr same-only" ${state.mode!=="same"?'style="display:none"':''}><input type="checkbox" class="gk-check" data-k="group_key" ${f.group_key?"checked":""}></td>
+      <td class="same-only" ${state.mode!=="same"?'style="display:none"':''}><select data-k="carry"><option ${f.carry!=="last"?"selected":""}>first</option>
         <option ${f.carry==="last"?"selected":""}>last</option></select></td>
-      <td class="same-only" ${state.mode==="common"?'style="display:none"':''}><input type="text" data-k="sum" placeholder="表key.列key" value="${esc(sc)}"></td>
+      <td class="same-only" ${state.mode!=="same"?'style="display:none"':''}><input type="text" data-k="sum" placeholder="表key.列key" value="${esc(sc)}"></td>
       <td class="ctr"><button class="rowdel" title="删除"><i class="fa-solid fa-xmark"></i></button></td>`;
     tr.querySelector(".rowdel").onclick=()=>{collectFields();state.fields.splice(i,1);renderFields();};
     tr.querySelector('[data-act="ai"]').onclick=async ev=>{
@@ -395,6 +413,16 @@ function renderFields(){
         if(d.description){state.fields[i].description=d.description;renderFields();}}
       finally{b.innerHTML='<i class="fa-solid fa-wand-magic-sparkles"></i>AI';b.disabled=false;}};
     tb.appendChild(tr);});
+}
+function renderMixedSchemas(){
+  const el=$("#mixedSchemaPreview");
+  if(state.mode!=="mixed"||!state.typeSchemas.length){el.style.display="none";el.innerHTML="";return;}
+  el.style.display="flex";
+  el.innerHTML=state.typeSchemas.map(s=>{
+    const fs=s.fields||[];
+    return `<div class="mixed-schema"><b>${esc(s.document_type||"未知类型")}</b>`+
+      `<div>${fs.length?fs.map(f=>esc(f.label||f.key)+(f.type==="table"?"（明细）":"")).join("、"):"未生成字段"}</div></div>`;
+  }).join("");
 }
 function collectFields(){
   const rows=[...$("#fbody").children];
@@ -413,27 +441,36 @@ $("#btnAdd").onclick=()=>{collectFields();
 /* ── AI 分析 ── */
 $("#btnAnalyze").onclick=async()=>{
   if(!state.files.length)return alert("请先上传至少一个 PDF 或图片");
-  saveSet();const b=$("#btnAnalyze");b.disabled=true;b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> '+(state.mode==="common"?'归纳中...':'识别中...');
+  saveSet();const b=$("#btnAnalyze");b.disabled=true;b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> '+(state.mode==="same"?'识别中...':'AI 分析中...');
   $("#pagesSum").textContent="";
   try{
     const fd=apiForm(new FormData());
-    if(state.mode==="common")state.files.forEach(f=>fd.append("files",f));
+    if(state.mode!=="same")state.files.forEach(f=>fd.append("files",f));
     else fd.append("file",state.files[0]);
-    const r=await fetch(state.mode==="common"?"/api/common/analyze":"/api/analyze",{method:"POST",body:fd});
+    const endpoint=state.mode==="same"?"/api/analyze":
+      (state.mode==="common"?"/api/common/analyze":"/api/mixed/analyze");
+    const r=await fetch(endpoint,{method:"POST",body:fd});
     const d=await r.json();
     if(d.error){alert(d.error);return;}
     if(d.pages)$("#pagesSum").innerHTML=state.mode==="common"?
       `共 <b>${d.files}</b> 个文件 · <b>${d.pages.total}</b> 页 · AI观察 <b>${d.sampled_pages}</b> 个代表页`:
-      `《${esc(state.files[0].name)}》共 <b>${d.pages.total}</b> 页：电子 <b>${d.pages.native}</b> · 扫描 <b>${d.pages.scanned}</b> · 空白 <b>${d.pages.blank}</b>`;
-    state.fields=d.fields||[];state.documentTypes=d.document_types||[];
-    state.docCtx=state.mode==="common"?(d.summary||"异构票据统一字段"):(d.doc_type||"");
+      (state.mode==="mixed"?
+       `共 <b>${d.files}</b> 个文件 · <b>${d.pages.total}</b> 页 · 识别 <b>${(d.document_types||[]).length}</b> 类 · 拆分约 <b>${d.logical_documents||0}</b> 份逻辑文档`:
+       `《${esc(state.files[0].name)}》共 <b>${d.pages.total}</b> 页：电子 <b>${d.pages.native}</b> · 扫描 <b>${d.pages.scanned}</b> · 空白 <b>${d.pages.blank}</b>`);
+    state.fields=d.fields||[];state.typeSchemas=d.schemas||[];state.documentTypes=d.document_types||[];
+    state.docCtx=state.mode==="common"?(d.summary||"同类票据跨版式字段"):
+      (state.mode==="mixed"?"混合异构文档分别提取":(d.doc_type||""));
     const dt=$("#docType");dt.style.display="block";
     dt.querySelector(".dt").textContent=state.mode==="common"?
-      `AI 归纳：${d.summary||"已生成公共字段"}${state.documentTypes.length?" · 观察类别："+state.documentTypes.join("、"):""}`:
-      "AI 识别："+(d.doc_type||"未知类型")+(d.warning?"（"+d.warning+"）":"");
+      `AI 归纳：${d.summary||"已生成统一字段"}${state.documentTypes.length?" · 观察类别："+state.documentTypes.join("、"):""}`:
+      (state.mode==="mixed"?
+       `AI 已识别 ${(state.documentTypes.length||0)} 类文档、约 ${d.logical_documents||0} 份逻辑文档：${state.documentTypes.join("、")||"待确认"}`:
+       "AI 识别："+(d.doc_type||"未知类型")+(d.warning?"（"+d.warning+"）":""));
     renderFields();
+    renderMixedSchemas();
   }catch(e){alert("分析失败："+e);}finally{b.disabled=false;b.innerHTML=state.mode==="common"?
-    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 总结公共字段':
+    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 总结同类字段':state.mode==="mixed"?
+    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 分析类型与字段':
     '<i class="fa-solid fa-magnifying-glass"></i> AI 识别文档 · 推荐字段';}
 };
 
@@ -442,7 +479,7 @@ $("#btnRun").onclick=async()=>{
   if(state.running)return;
   if(!state.files.length)return alert("请先上传 PDF 或图片");
   collectFields();
-  if(state.mode!=="common"&&!state.fields.length)return alert("请先选择预设或用 AI 识别生成字段");
+  if(state.mode==="same"&&!state.fields.length)return alert("请先选择预设或用 AI 识别生成字段");
   saveSet();state.running=true;
   const btn=$("#btnRun");btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> 提取中...';
   $("#energyWrap").style.display="block";$("#resultBox").style.display="none";
@@ -454,7 +491,8 @@ $("#btnRun").onclick=async()=>{
     fd.append("document_types",JSON.stringify(state.documentTypes));
     state.files.forEach(f=>fd.append("files",f));
     const commonOneClick=state.mode==="common"&&!state.fields.length;
-    const endpoint=state.mode!=="common"?"/extract":(commonOneClick?"/common/run":"/common/extract");
+    const endpoint=state.mode==="mixed"?"/mixed/run":
+      (state.mode==="same"?"/extract":(commonOneClick?"/common/run":"/common/extract"));
     const resp=await fetch(endpoint,{method:"POST",body:fd});
     if(!resp.ok||!resp.body){const t=await resp.json().catch(()=>({}));
       throw new Error(t.error||("HTTP "+resp.status));}
@@ -471,13 +509,22 @@ $("#btnRun").onclick=async()=>{
             (ev.blank_pages?`（空白 ${ev.blank_pages} 页自动跳过）`:"")+
             (ev.ocr?" · 本地OCR已启用":""));}
         else if(ev.type==="schema"){
-          state.fields=ev.fields||[];state.documentTypes=ev.document_types||[];
-          state.docCtx=ev.summary||"异构票据统一字段";renderFields();
-          const dt=$("#docType");dt.style.display="block";
-          dt.querySelector(".dt").textContent=`AI 已从 ${ev.sampled_pages||0} 个差异化代表页归纳 ${state.fields.length} 个公共字段`;
-          setBar(35);setStatus("公共字段已生成，开始全量统一提取…");}
+          if(state.mode==="mixed"){
+            state.typeSchemas=ev.schemas||[];state.fields=[];state.documentTypes=ev.document_types||[];
+            state.docCtx="混合异构文档分别提取";renderFields();renderMixedSchemas();
+            const dt=$("#docType");dt.style.display="block";
+            dt.querySelector(".dt").textContent=`AI 已识别 ${state.documentTypes.length} 类文档并分别生成字段：${state.documentTypes.join("、")||"待确认"}`;
+            setBar(48);setStatus("文档类型和字段方案已生成，开始分别提取…");
+          }else{
+            state.fields=ev.fields||[];state.documentTypes=ev.document_types||[];
+            state.docCtx=ev.summary||"同类票据跨版式字段";renderFields();
+            const dt=$("#docType");dt.style.display="block";
+            dt.querySelector(".dt").textContent=`AI 已从 ${ev.sampled_pages||0} 个差异化代表页归纳 ${state.fields.length} 个统一字段`;
+            setBar(35);setStatus("统一字段已生成，开始全量提取…");
+          }}
         else if(ev.type==="page"){
-          setBar(state.mode==="common"?35+50*ev.current/total:6+82*ev.current/total);
+          setBar(state.mode==="common"?35+50*ev.current/total:
+            (state.mode==="mixed"?48+45*ev.current/total:6+82*ev.current/total));
           logPage(ev);
           setStatus(`提取中 ${ev.current}/${total} 页 · ${esc(ev.filename)} 第${ev.page}页`);}
         else if(ev.type==="progress"){setBar(ev.pct||90);setStatus(ev.message||"");}
@@ -486,7 +533,8 @@ $("#btnRun").onclick=async()=>{
       }}
   }catch(e){setStatus(`<span class="badc"><i class="fa-solid fa-circle-xmark"></i> ${esc(String(e.message||e))}</span>`);}
   finally{state.running=false;btn.disabled=false;btn.innerHTML=state.mode==="common"?
-    '<i class="fa-solid fa-layer-group"></i> 一键总结并统一提取':
+    '<i class="fa-solid fa-layer-group"></i> 一键统一提取':state.mode==="mixed"?
+    '<i class="fa-solid fa-layer-group"></i> 一键拆分并分别提取':
     '<i class="fa-solid fa-bolt"></i> 开始提取';}
 };
 function setBar(p){$("#energyFill").style.width=Math.min(100,p)+"%";}
@@ -506,6 +554,7 @@ function evPill(ev){if(!ev)return"";
     const[t,c]=EV_PILL[p]||[p,"native"];return`<span class="pill ${c}">${t}</span>`;}).join(" ");}
 function renderResult(res){
   if(res.mode==="common"){renderCommonResult(res);return;}
+  if(res.mode==="mixed"){renderMixedResult(res);return;}
   state.job=res.job;
   $("#resultBox").style.display="block";
   const v=res.validation||{total:0,passed:0,issues:[]};
@@ -551,6 +600,46 @@ function renderResult(res){
     tds+=`<td class="hide-sm">${esc(r._confidence||"—")}</td>`;
     tds+=`<td>${r._error?`<span class="badc" title="${esc(r._error)}"><i class="fa-solid fa-circle-xmark"></i> 失败</span>`:'<span class="okc"><i class="fa-solid fa-circle-check"></i></span>'}</td>`;
     tr.innerHTML=tds;tb.appendChild(tr);}
+}
+function renderMixedResult(res){
+  state.job=res.job;state.typeSchemas=res.schemas||state.typeSchemas||[];
+  state.documentTypes=state.typeSchemas.map(s=>s.document_type).filter(Boolean);
+  $("#resultBox").style.display="block";
+  const issues=res.issues||[];
+  $("#chips").innerHTML=
+    `<span class="chip"><i class="fa-solid fa-file-lines"></i> ${res.total_pages||0} 页</span>`+
+    `<span class="chip"><i class="fa-solid fa-layer-group"></i> ${res.records||0} 份逻辑文档</span>`+
+    `<span class="chip"><i class="fa-solid fa-tags"></i> ${state.documentTypes.length} 类文档</span>`+
+    `<span class="chip ${issues.length?'warn':'ok'}">${issues.length?issues.length+' 项待复核':'边界与字段已完成'}</span>`;
+  const ib=$("#issues");
+  if(issues.length){ib.style.display="block";ib.innerHTML=
+    `<div class="t"><i class="fa-solid fa-triangle-exclamation"></i> 需要人工确认</div><ul>`+
+    issues.slice(0,30).map(i=>`<li>${esc(i.document_id||'文档')} · ${esc(i.field||'文档边界')}：${esc(i.message||'')}</li>`).join("")+"</ul>";}
+  else ib.style.display="none";
+  $("#rHead").innerHTML="<tr><th>逻辑文档</th><th>文档类型</th><th>字段结果（按类型方案）</th><th>边界/提取</th><th>状态</th></tr>";
+  const tb=$("#rBody");tb.innerHTML="";
+  for(const r of (res.rows||[])){
+    const tr=document.createElement("tr");
+    if(r._error)tr.className="bad";
+    const schema=state.typeSchemas.find(s=>String(s.document_type||"")===String(r._schema_type||r._document_type||""))||{fields:[]};
+    const values=(schema.fields||[]).map(f=>{
+      const val=r[f.key];
+      if(f.type==="table"){
+        const n=(r._tables&&r._tables[f.key]||[]).length;
+        return `<div><b>${esc(f.label||f.key)}</b>：${n} 行明细</div>`;
+      }
+      return `<div><b>${esc(f.label||f.key)}</b>：${esc(val==null||val===""?"—":String(val))}</div>`;
+    }).join("")||"<span style=\"color:var(--sub)\">未生成字段方案</span>";
+    const boundary=r._segmentation_confidence||"—";
+    const status=r._error?`<span class="badc" title="${esc(r._error)}"><i class="fa-solid fa-circle-xmark"></i> 失败</span>`:
+      ((boundary==="low"||issues.some(i=>i.document_id===r._document_id))?'<span class="badc">待确认</span>':'<span class="okc">完成</span>');
+    tr.innerHTML=`<td title="${esc(r._filename||"")}"><b>${esc(r._document_id||"")}</b><br>${esc(r._filename||"")} <span style="color:var(--sub)">p${esc(r._pages||"")}</span></td>`+
+      `<td>${esc(r._schema_type||r._document_type||"未知")}<br><span style="color:var(--sub)">${esc(r._document_no||"")}</span></td>`+
+      `<td style="white-space:normal;min-width:260px">${values}</td>`+
+      `<td title="${esc(r._segmentation_reason||"")}">${esc(boundary)}<br>${evPill(r._evidence)||"—"}</td>`+
+      `<td>${status}</td>`;
+    tb.appendChild(tr);
+  }
 }
 function renderCommonResult(res){
   state.job=res.job;$("#resultBox").style.display="block";
