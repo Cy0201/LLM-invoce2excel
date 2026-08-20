@@ -27,6 +27,8 @@ import json
 import time
 import random
 import logging
+import ipaddress
+from urllib.parse import urlparse
 
 logger = logging.getLogger('ai_client')
 
@@ -118,6 +120,22 @@ class AIClient(object):
         if self.cfg.is_qwen_like():
             return {'chat_template_kwargs': {'enable_thinking': False}}
         return None
+
+    def _trust_env_proxy(self):
+        """公网请求沿用系统代理；内网网关必须绕过代理直连。
+
+        Windows 上常驻的代理/VPN 客户端通常监听 127.0.0.1:7890，但不一定
+        能转发 172.16/10/192.168 网段。httpx 默认 trust_env=True，会把本应
+        直连的内网 API 发给代理，常见表现就是 WinError 10061 或长时间超时。
+        """
+        host = urlparse(self.cfg.base_url).hostname or ''
+        if host.lower() in ('localhost', '127.0.0.1', '::1'):
+            return False
+        try:
+            return not ipaddress.ip_address(host).is_private
+        except ValueError:
+            # 域名可能解析到公网，交给系统代理；用户也可以通过 NO_PROXY 控制。
+            return True
 
     def _system(self, system):
         if self.cfg.is_qwen_like() and '/no_think' not in system:
@@ -228,7 +246,8 @@ class AIClient(object):
             'Authorization': f'Bearer {self.cfg.token}',
         }
 
-        with httpx.Client(timeout=self.cfg.timeout) as http:
+        with httpx.Client(timeout=self.cfg.timeout,
+                          trust_env=self._trust_env_proxy()) as http:
             resp = http.post(
                 self.cfg.base_url + '/v1/messages',
                 json=body, headers=headers)

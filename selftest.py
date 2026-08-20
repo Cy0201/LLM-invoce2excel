@@ -186,6 +186,10 @@ def offline():
           text == '{"ok":true}' and len(retry_calls) == 2 and
           retry_calls[1][1] is False and retry_calls[1][0].endswith('/no_think'),
           retry_calls)
+    check('内网网关绕过系统代理',
+          not APP.AIClient(APP.GatewayConfig('http://172.16.92.211:23323', '', 'qwen3.6'))._trust_env_proxy())
+    check('公网网关保留系统代理',
+          APP.AIClient(APP.GatewayConfig('https://api.anthropic.com', '', 'claude'))._trust_env_proxy())
 
     common_fields = CM.normalize_common_fields([
         {'key': 'common_value', 'label': '统一字段', 'type': 'text',

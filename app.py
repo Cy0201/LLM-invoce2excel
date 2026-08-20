@@ -152,6 +152,8 @@ def api_ping():
     out = {'gateway': cfg.base_url, 'model': cfg.model,
            'ocr': P.ocr_available()}
     ai = _make_ai_call(cfg)
+    if isinstance(ai, AIClient):
+        out['proxy_bypass'] = not ai._trust_env_proxy()
     t0 = time.time()
     try:
         text, _ = ai('text', '你是回显器。', '只回复两个字：OK', 12800000)

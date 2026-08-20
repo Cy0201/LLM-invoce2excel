@@ -335,7 +335,7 @@ $("#btnPing").onclick=async()=>{
     h+=d.vision_ok?` · <span class="okc"><i class="fa-solid fa-circle-check"></i> 视觉 ${d.vision_ms}ms</span>`
                   :` · <span class="badc"><i class="fa-solid fa-circle-xmark"></i> 视觉不可用</span>（扫描件将自动走OCR文本）`;
     h+=`<br>本地OCR：${d.ocr?'<span class="okc"><i class="fa-solid fa-circle-check"></i> 已安装</span>':'未安装（建议 pip install rapidocr-onnxruntime）'}`;
-    h+=`<br><span style="color:var(--sub)">${esc(d.gateway)} · ${esc(d.model)}</span>`;
+    h+=`<br><span style="color:var(--sub)">${esc(d.gateway)} · ${esc(d.model)}${d.proxy_bypass?' · 内网直连':' · 系统代理'}</span>`;
     if(!d.vision_ok&&d.vision_error)h+=`<br><span style="color:var(--sub)">${esc(d.vision_error)}</span>`;
     el.innerHTML=h;
   }catch(e){el.innerHTML=`<span class="badc"><i class="fa-solid fa-circle-xmark"></i> ${esc(String(e))}</span>`;}
