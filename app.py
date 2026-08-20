@@ -452,6 +452,10 @@ def _run_mixed_extraction(job_id, loaded, pfs, bad, pages, schemas,
           'files': len(pfs), 'blank_pages': sum(p.get('_blank', False) for p in pages),
           'ocr': P.ocr_available(), 'job': job_id})
     results, done, lock = [], [0], threading.Lock()
+    for name, error in bad or []:
+        emit({'type': 'page', 'mode': 'error', 'filename': name, 'page': 0,
+              'current': done[0], 'total_pages': total,
+              'error': '无法打开: %s' % str(error)[:180]})
 
     def run_page(page):
         if page.get('_blank'):
