@@ -48,9 +48,10 @@ class GatewayConfig(object):
 class AIResponseError(RuntimeError):
     """网关有响应但拿不到可用正文。带诊断信息与 no_vision 标记。"""
 
-    def __init__(self, msg, no_vision=False):
+    def __init__(self, msg, no_vision=False, only_thinking=False):
         super(AIResponseError, self).__init__(msg)
         self.no_vision = no_vision
+        self.only_thinking = only_thinking
 
 
 # ══════════════════════════════════════════════════════════════
@@ -93,7 +94,8 @@ def _resp_text(resp, had_image):
         raise AIResponseError(
             '模型只输出了 %d 字的思考块、没有正文（stop_reason=%s）。已通过 '
             'chat_template_kwargs.enable_thinking=false 与 /no_think 双重关闭思考；'
-            '若仍出现，请在网关侧确认思考开关是否透传。' % (think_len, stop))
+            '若仍出现，请在网关侧确认思考开关是否透传。' % (think_len, stop),
+            only_thinking=True)
     if not blocks:
         if had_image:
             raise AIResponseError(
@@ -122,12 +124,29 @@ class AIClient(object):
             return system + '\n/no_think'
         return system
 
+    def _user(self, user, force=False):
+        """Qwen 的软开关通常只读取最后一条 user 消息，不能只放在 system。"""
+        if (self.cfg.is_qwen_like() or force) and '/no_think' not in user:
+            return user.rstrip() + '\n\n/no_think'
+        return user
+
     def call(self, kind, system, user, max_tokens, image_b64=None):
         """统一入口。kind ∈ {'text','vision'}；返回 (text, stop_reason)。
         测试可整体替换本方法（app._AI_CALL_OVERRIDE）。"""
-        if self.cfg.is_qwen_like():
-            return self._raw_call(kind, system, user, max_tokens, image_b64)
-        return self._sdk_call(kind, system, user, max_tokens, image_b64)
+        method = self._raw_call if self.cfg.is_qwen_like() else self._sdk_call
+        try:
+            return method(kind, system, self._user(user), max_tokens, image_b64)
+        except AIResponseError as e:
+            if not e.only_thinking:
+                raise
+            # 一些网关会在 assistant JSON 预填之前先生成思考。去掉预填并把
+            # /no_think 放到最后一条 user 消息末尾，再重试一次。
+            logger.warning('模型仅返回思考块；关闭 assistant 预填并强制 user /no_think 重试')
+            self._prefill_ok = False
+            retry_user = self._user(
+                user.rstrip() + '\n\n直接输出最终答案，不要输出分析、推理或思考过程。',
+                force=True)
+            return method(kind, system, retry_user, max_tokens, image_b64)
 
     def _sdk_call(self, kind, system, user, max_tokens, image_b64=None):
         """通过 Anthropic SDK（非 qwen 模型使用）。"""
@@ -214,13 +233,13 @@ class AIClient(object):
                 self.cfg.base_url + '/v1/messages',
                 json=body, headers=headers)
 
-        if resp.status_code == 400 and use_prefill and 'assistant' in resp.text.lower():
-            logger.info('网关不支持 assistant 预填，已降级')
-            self._prefill_ok = False
-            body['messages'] = msgs[:-1]
-            resp = http.post(
-                self.cfg.base_url + '/v1/messages',
-                json=body, headers=headers)
+            if resp.status_code == 400 and use_prefill and 'assistant' in resp.text.lower():
+                logger.info('网关不支持 assistant 预填，已降级')
+                self._prefill_ok = False
+                body['messages'] = msgs[:-1]
+                resp = http.post(
+                    self.cfg.base_url + '/v1/messages',
+                    json=body, headers=headers)
 
         if resp.status_code != 200:
             raise RuntimeError(f'HTTP {resp.status_code}: {resp.text[:500]}')
@@ -254,7 +273,8 @@ class AIClient(object):
             raise AIResponseError(
                 '模型只输出了 %d 字的思考块、没有正文（stop_reason=%s）。'
                 '已通过 raw HTTP chat_template_kwargs.enable_thinking=false 关闭思考；'
-                '请在网关侧确认思考开关是否透传。' % (think_len, stop))
+                '请在网关侧确认思考开关是否透传。' % (think_len, stop),
+                only_thinking=True)
         if not content:
             raise AIResponseError('网关返回空 content（stop_reason=%s）。' % stop)
         raise AIResponseError('响应中没有文本块（stop_reason=%s）。' % stop)

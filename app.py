@@ -35,6 +35,8 @@ from ai_client import GatewayConfig, AIClient, AIResponseError, robust_call, par
 from extractor import extract_page, repair_note_for
 from merge import normalize_fields, merge_pages, splice_results
 from excel_export import write_excel
+import common_mode as CM
+from common_export import write_common_excel
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
@@ -151,7 +153,7 @@ def api_ping():
     ai = _make_ai_call(cfg)
     t0 = time.time()
     try:
-        text, _ = ai('text', '你是回显器。', '只回复两个字：OK', 128000)
+        text, _ = ai('text', '你是回显器。', '只回复两个字：OK', 12800000)
         out['text_ok'] = True
         out['text_ms'] = int((time.time() - t0) * 1000)
         out['echo'] = (text or '')[:40]
@@ -161,7 +163,7 @@ def api_ping():
         return jsonify(out)
     t1 = time.time()
     try:
-        ai('vision', '你是回显器。', '这是一张纯白测试图。只回复两个字：OK', 128000,
+        ai('vision', '你是回显器。', '这是一张纯白测试图。只回复两个字：OK', 12800000,
            image_b64=_tiny_probe_image())
         out['vision_ok'] = True
         out['vision_ms'] = int((time.time() - t1) * 1000)
@@ -187,9 +189,9 @@ def api_analyze():
         return jsonify({'error': '文件为空'}), 400
     fname = safe_name(request.files['file'].filename)
     try:
-        pf = P.PdfFile(fname, fb).scan()
+        pf = P.open_file(fname, fb).scan()
     except Exception as e:
-        return jsonify({'error': '无法打开 PDF：%s' % e}), 400
+        return jsonify({'error': '无法打开 PDF/图片：%s' % e}), 400
     kinds = [pg.kind for pg in pf.pages]
     summary = {'total': len(kinds), 'native': kinds.count('native'),
                'scanned': kinds.count('scanned'), 'blank': kinds.count('blank')}
@@ -240,7 +242,7 @@ def api_analyze():
 
 def _ask_analyze(ai, kind, user, image_b64):
     def once(u):
-        t, _ = robust_call(lambda: ai(kind, PS.ANALYZE_SYSTEM, u, 128000,
+        t, _ = robust_call(lambda: ai(kind, PS.ANALYZE_SYSTEM, u, 12800000,
                                       image_b64=image_b64), ctx='[分析] ')
         return t
     raw = once(user)
@@ -249,6 +251,86 @@ def _ask_analyze(ai, kind, user, image_b64):
         return raw
     except ValueError:
         return once(user + '\n\n（你上一次的输出无法解析为 JSON。请只输出 JSON 对象。）')
+
+
+# ══════════════════════════════════════════════════════════════
+#  异构票据：AI 观察代表页并归纳统一字段（独立于原有同类票据流程）
+# ══════════════════════════════════════════════════════════════
+@app.route('/api/common/analyze', methods=['POST'])
+def api_common_analyze():
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    cfg = _cfg_from(request)
+    pfs = []
+    try:
+        pfs, bad_pairs = _scan_common_loaded(loaded)
+        bad = [{'filename': name, 'error': error[:180]} for name, error in bad_pairs]
+        if not pfs:
+            return jsonify({'error': '没有可解析的 PDF 或图片', 'bad_files': bad}), 400
+        result, refs = _discover_common_from_pfs(pfs, cfg)
+        if not result['fields']:
+            return jsonify({'error': 'AI 未归纳出可用的公共字段'}), 422
+        kinds = [page.kind for pf in pfs for page in pf.pages]
+        return jsonify({
+            'summary': result['summary'], 'document_types': result['document_types'],
+            'fields': result['fields'], 'sampled_pages': len(refs),
+            'pages': {'total': len(kinds), 'native': kinds.count('native'),
+                      'scanned': kinds.count('scanned'), 'blank': kinds.count('blank')},
+            'files': len(pfs), 'bad_files': bad,
+        })
+    except Exception as e:
+        logger.warning('公共字段分析失败: %s', traceback.format_exc())
+        return jsonify({'error': '公共字段分析失败：%s' % str(e)[:300]}), 500
+    finally:
+        for pf in pfs:
+            pf.close()
+
+
+def _scan_common_loaded(loaded):
+    pfs, bad = [], []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futs = {pool.submit(lambda nb: P.open_file(nb[0], nb[1]).scan(), nb): nb[0]
+                for nb in loaded}
+        for fut, name in futs.items():
+            try:
+                pfs.append(fut.result())
+            except Exception as e:
+                bad.append((name, str(e)))
+    order = [name for name, _ in loaded]
+    pfs.sort(key=lambda pf: order.index(pf.name))
+    return pfs, bad
+
+
+def _discover_common_from_pfs(pfs, cfg, emit=None):
+    refs = CM.representative_pages(pfs)
+    if not refs:
+        raise ValueError('上传文件中没有可分析的页面')
+    ai = _make_ai_call(cfg)
+    caps, inventories = {'vision': True}, []
+    for pos, (pf, idx) in enumerate(refs, 1):
+        page = pf.pages[idx]
+        image_b64, ocr_hint = None, ''
+        if page.kind != 'native':
+            img = pf.render(idx, target_side=ANALYZE_IMG_SIDE)
+            image_b64 = P.pil_to_b64(img, max_side=ANALYZE_IMG_SIDE, quality=85)
+            ocr_hint = P.ocr_layout(img) or page.hint
+        item = CM.observe_page(
+            ai, kind=page.kind, fname=pf.name, page_no=idx + 1,
+            total=pf.page_count, text=page.text or page.hint,
+            image_b64=image_b64, ocr_hint=ocr_hint, caps=caps,
+            ctx='[公共字段观察 %s p%d] ' % (pf.name, idx + 1))
+        item['_source'] = {'filename': pf.name, 'page': idx + 1}
+        inventories.append(item)
+        if emit:
+            emit({'type': 'progress',
+                  'message': 'AI 观察差异化代表页 %d/%d…' % (pos, len(refs)),
+                  'pct': 5 + int(25 * pos / len(refs))})
+    if emit:
+        emit({'type': 'progress', 'message': '分批归纳并合并公共字段…', 'pct': 32})
+    return CM.discover_from_inventories(ai, inventories), refs
 
 
 # ══════════════════════════════════════════════════════════════
@@ -264,7 +346,7 @@ def api_complete_field():
         ai = _make_ai_call(cfg)
         raw, _ = ai('text', PS.COMPLETE_SYSTEM,
                     PS.complete_user(d.get('label', ''), d.get('type', 'text'),
-                                     d.get('doc_context', '')), 160)
+                                     d.get('doc_context', '')), 16000)
         return jsonify({'description': (raw or '').strip().strip('"\'{}')[:60]})
     except Exception as e:
         logger.warning('补全失败: %s', e)
@@ -314,6 +396,192 @@ def extract():
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
+@app.route('/common/extract', methods=['POST'])
+def common_extract():
+    cfg = _cfg_from(request)
+    try:
+        fields = CM.normalize_common_fields(json.loads(request.form.get('fields', '[]')))
+        document_types = json.loads(request.form.get('document_types', '[]'))
+        if not isinstance(document_types, list):
+            document_types = []
+    except Exception:
+        return jsonify({'error': '统一字段定义不是合法 JSON'}), 400
+    if not fields:
+        return jsonify({'error': '请先让 AI 总结公共字段'}), 400
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    job_id = uuid.uuid4().hex[:12]
+
+    def generate():
+        q = queue.Queue()
+
+        def worker():
+            try:
+                _run_common_job(job_id, loaded, fields, document_types, cfg,
+                                lambda o: q.put(_sse(o)))
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                q.put(_sse({'type': 'error', 'message': str(e)[:400]}))
+            finally:
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
+@app.route('/common/run', methods=['POST'])
+def common_run():
+    """一键完成：差异化采样 → AI 公共字段归纳 → 全量统一提取。"""
+    cfg = _cfg_from(request)
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    job_id = uuid.uuid4().hex[:12]
+
+    def generate():
+        q = queue.Queue()
+
+        def worker():
+            pfs = []
+            handed_off = False
+            try:
+                q.put(_sse({'type': 'progress', 'message': '扫描文件并比较页面差异…',
+                            'pct': 2}))
+                pfs, bad = _scan_common_loaded(loaded)
+                if not pfs:
+                    raise ValueError('没有可解析的 PDF 或图片')
+                result, refs = _discover_common_from_pfs(
+                    pfs, cfg, lambda o: q.put(_sse(o)))
+                fields = result.get('fields') or []
+                if not fields:
+                    raise ValueError('AI 未归纳出可用的公共字段')
+                q.put(_sse({'type': 'schema', 'mode': 'common',
+                            'summary': result.get('summary', ''),
+                            'document_types': result.get('document_types', []),
+                            'fields': fields, 'sampled_pages': len(refs)}))
+                handed_off = True
+                _run_common_job(job_id, loaded, fields,
+                                result.get('document_types', []), cfg,
+                                lambda o: q.put(_sse(o)), pfs=pfs, bad=bad)
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                q.put(_sse({'type': 'error', 'message': str(e)[:400]}))
+            finally:
+                # 正常提取会在任务末尾关闭；异常时这里兜底。close 可重复调用。
+                for pf in pfs:
+                    pf.close()
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
+def _run_common_job(job_id, loaded, fields, document_types, cfg, emit,
+                    pfs=None, bad=None):
+    ai = _make_ai_call(cfg)
+    caps = {'vision': True}
+    if pfs is None:
+        pfs, bad = _scan_common_loaded(loaded)
+    bad = bad or []
+    for name, error in bad:
+        emit({'type': 'page', 'filename': name, 'page': 0, 'current': 0,
+              'total_pages': 0, 'mode': 'error', 'error': '无法打开: %s' % error[:160]})
+    if not pfs:
+        emit({'type': 'error', 'message': '没有可解析的 PDF 或图片'})
+        return
+
+    tasks = [(pf, i) for pf in pfs for i in range(pf.page_count)]
+    total = len(tasks)
+    n_blank = sum(1 for pf, i in tasks if pf.pages[i].kind == 'blank')
+    emit({'type': 'start', 'mode': 'common', 'total_pages': total, 'files': len(pfs),
+          'blank_pages': n_blank, 'ocr': P.ocr_available(), 'job': job_id})
+    results, done = [], [0]
+    lock = threading.Lock()
+
+    def finish(pf, idx, data, mode, error=None):
+        data['_page'] = idx + 1
+        data['_filename'] = pf.name
+        with lock:
+            results.append(data)
+            done[0] += 1
+            current = done[0]
+        emit({'type': 'page', 'filename': pf.name, 'page': idx + 1,
+              'current': current, 'total_pages': total, 'mode': mode, 'error': error})
+
+    def run_page(pf, idx):
+        page = pf.pages[idx]
+        ctx = '[统一提取 %s p%d] ' % (pf.name, idx + 1)
+        if page.kind == 'blank':
+            finish(pf, idx, {'_blank': True, '_kind': 'blank'}, 'blank')
+            return
+        try:
+            if page.kind == 'native':
+                data = CM.common_extract_page(
+                    fields, ai, kind='native', fname=pf.name, page_no=idx + 1,
+                    total=pf.page_count, text=page.text, caps=caps,
+                    document_types=document_types, ctx=ctx)
+            else:
+                img = pf.render(idx)
+                b64 = P.pil_to_b64(img)
+                hint = P.ocr_layout(img)
+                data = CM.common_extract_page(
+                    fields, ai, kind='scanned', fname=pf.name, page_no=idx + 1,
+                    total=pf.page_count, text=page.hint, image_b64=b64,
+                    ocr_hint=hint, caps=caps, document_types=document_types, ctx=ctx)
+            finish(pf, idx, data, page.kind)
+        except Exception as e:
+            logger.warning('%s提取失败: %s', ctx, e)
+            finish(pf, idx, {'_error': '%s: %s' % (type(e).__name__, str(e)[:220]),
+                             '_evidence': 'failed', '_kind': page.kind}, 'error', str(e)[:220])
+
+    text_tasks = [(pf, i) for pf, i in tasks if pf.pages[i].kind == 'native']
+    other_tasks = [(pf, i) for pf, i in tasks if pf.pages[i].kind != 'native']
+    tp = ThreadPoolExecutor(max_workers=max(1, min(TEXT_WORKERS, len(text_tasks) or 1)))
+    vp = ThreadPoolExecutor(max_workers=max(1, min(VISION_WORKERS, len(other_tasks) or 1)))
+    futures = [tp.submit(run_page, pf, i) for pf, i in text_tasks] + \
+              [vp.submit(run_page, pf, i) for pf, i in other_tasks]
+    for future in futures:
+        future.result()
+    tp.shutdown()
+    vp.shutdown()
+
+    emit({'type': 'progress', 'message': '结合全文顺序复核文档边界…', 'pct': 90})
+    segment_issues = CM.refine_document_boundaries(ai, results, fields)
+    emit({'type': 'progress', 'message': '按复核后的边界归组并统一字段…', 'pct': 96})
+    records, issues = CM.assemble_common_pages(results, fields, segment_issues)
+    for pf in pfs:
+        pf.close()
+    _store_job(job_id, {'mode': 'common', 'records': records, 'fields': fields,
+                        'issues': issues, 'validations': []})
+    emit({'type': 'result', 'mode': 'common', 'job': job_id,
+          'total_pages': total, 'blank_pages': n_blank, 'records': len(records),
+          'issues': issues,
+          'fields': [{'key': f['key'], 'label': f['label'], 'type': f['type'],
+                      'coverage': f.get('coverage', 0),
+                      'source_variants': f.get('source_variants', []),
+                      'columns': f.get('columns', [])} for f in fields],
+          'rows': CM.common_rows(records, fields)})
+
+
 def _run_job(job_id, loaded, fields, cfg, emit):
     ai = _make_ai_call(cfg)
     caps = {'vision': True}
@@ -321,7 +589,7 @@ def _run_job(job_id, loaded, fields, cfg, emit):
     # 1) 结构扫描（本地，快；并发做）
     pfs, bad = [], []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futs = {pool.submit(lambda nb: P.PdfFile(nb[0], nb[1]).scan(), nb): nb[0]
+        futs = {pool.submit(lambda nb: P.open_file(nb[0], nb[1]).scan(), nb): nb[0]
                 for nb in loaded}
         for fut, nm in futs.items():
             try:
@@ -333,7 +601,7 @@ def _run_job(job_id, loaded, fields, cfg, emit):
         emit({'type': 'page', 'filename': nm, 'page': 0, 'current': 0,
               'total_pages': 0, 'mode': 'error', 'error': '无法打开: %s' % err[:160]})
     if not pfs:
-        emit({'type': 'error', 'message': '没有可解析的 PDF'})
+        emit({'type': 'error', 'message': '没有可解析的 PDF 或图片'})
         return
 
     tasks = [(pf, i) for pf in pfs for i in range(pf.page_count)]
@@ -507,11 +775,16 @@ def download():
         job = JOBS.get(job_id) or (next(reversed(JOBS.values())) if JOBS else None)
     if not job:
         return jsonify({'error': '暂无数据，请先提取'}), 400
-    data = write_excel(job['records'], job['fields'], job['validations'])
+    if job.get('mode') == 'common':
+        data = write_common_excel(job['records'], job['fields'], job.get('issues', []))
+        filename = '统一字段提取结果.xlsx'
+    else:
+        data = write_excel(job['records'], job['fields'], job['validations'])
+        filename = '提取结果.xlsx'
     return send_file(
         io.BytesIO(data),
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True, download_name='提取结果.xlsx')
+        as_attachment=True, download_name=filename)
 
 
 if __name__ == '__main__':

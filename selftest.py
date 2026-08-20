@@ -158,7 +158,8 @@ def offline():
     import presets as PS
     from merge import (normalize_fields, parse_columns, merge_pages, to_num)
     from extractor import coerce, norm_date
-    from claude_sim import SimAI
+    from claude_sim import SimAI, CommonSimAI
+    import common_mode as CM
 
     print('\n[单元] 基础构件')
     cols = parse_columns('列：seq 序号, hs_code 税号, name 货物名称')
@@ -168,6 +169,110 @@ def offline():
     check('数值归一', coerce('￥１２,３45.60元', 'number') == 12345.6)
     check('中文文件名保留', APP.safe_name('目录/税票 A.pdf') == '税票 A.pdf')
     check('重名去重', APP._uniq_names(['a.pdf', 'a.pdf'])[1] == 'a(1).pdf')
+
+    from ai_client import GatewayConfig, AIClient, AIResponseError
+    qwen_client = AIClient(GatewayConfig('http://example.invalid', 'x', 'qwen-test'))
+    check('no_think追加在Qwen用户消息末尾',
+          qwen_client._user('请输出JSON').endswith('/no_think'))
+    retry_calls = []
+    def thinking_once(kind, system, user, max_tokens, image_b64=None):
+        retry_calls.append((user, qwen_client._prefill_ok))
+        if len(retry_calls) == 1:
+            raise AIResponseError('只有思考', only_thinking=True)
+        return '{"ok":true}', 'end_turn'
+    qwen_client._raw_call = thinking_once
+    text, _ = qwen_client.call('text', 'system', 'user', 100)
+    check('仅思考自动关闭预填并重试',
+          text == '{"ok":true}' and len(retry_calls) == 2 and
+          retry_calls[1][1] is False and retry_calls[1][0].endswith('/no_think'),
+          retry_calls)
+
+    common_fields = CM.normalize_common_fields([
+        {'key': 'common_value', 'label': '统一字段', 'type': 'text',
+         'description': '不同文档中的同一业务含义'}])
+    mixed_pages = [
+        {'_filename': 'mix.pdf', '_page': 1, '_document_type': '类型甲',
+         '_document_no': 'A-1', '_is_continuation': False,
+         'common_value': '甲值', '_field_meta': {'common_value': {'status': 'found'}},
+         '_confidence': 'high', '_evidence': 'native_text'},
+        {'_filename': 'mix.pdf', '_page': 2, '_document_type': '类型乙',
+         '_document_no': 'B-1', '_is_continuation': False,
+         'common_value': '乙值', '_field_meta': {'common_value': {'status': 'found'}},
+         '_confidence': 'high', '_evidence': 'native_text'},
+        {'_filename': 'mix.pdf', '_page': 3, '_document_type': '类型甲',
+         '_document_no': None, '_is_continuation': True,
+         'common_value': '甲值', '_field_meta': {'common_value': {'status': 'found'}},
+         '_confidence': 'high', '_evidence': 'native_text'},
+    ]
+    common_recs, common_issues = CM.assemble_common_pages(mixed_pages, common_fields)
+    check('异构交错页按同类型续页归组',
+          len(common_recs) == 2 and common_recs[0]['_pages'] == '1+3', common_recs)
+    check('通用归组无票据类型规则', not common_issues, common_issues)
+
+    detail_fields = CM.normalize_common_fields([
+        {'key': 'transactions', 'label': '交易明细', 'type': 'table',
+         'description': '不同版式对账单中的逐笔交易',
+         'columns': [
+             {'key': 'trade_date', 'label': '交易日期', 'type': 'date',
+              'description': '该笔交易入账日期'},
+             {'key': 'amount', 'label': '发生额', 'type': 'number',
+              'description': '该笔交易金额'},
+         ]}])
+    detail_pages = [
+        {'_filename': 'bank.pdf', '_page': 1, '_segment_anchor': 1,
+         '_segment_confidence': 'high', '_document_type': '银行对账单',
+         'transactions': [{'trade_date': '2026-01-01', 'amount': 10}],
+         '_field_meta': {'transactions': {'status': 'found', 'confidence': 'high'}},
+         '_confidence': 'high', '_evidence': 'native_text'},
+        {'_filename': 'bank.pdf', '_page': 2, '_segment_anchor': 1,
+         '_segment_confidence': 'high', '_document_type': '银行对账单',
+         'transactions': [{'trade_date': '2026-01-02', 'amount': -3}],
+         '_field_meta': {'transactions': {'status': 'found', 'confidence': 'high'}},
+         '_confidence': 'high', '_evidence': 'native_text'},
+    ]
+    detail_recs, detail_issues = CM.assemble_common_pages(detail_pages, detail_fields)
+    check('异构明细表跨页统一归并',
+          len(detail_recs) == 1 and len(detail_recs[0]['transactions']) == 2,
+          detail_recs)
+    from common_export import write_common_excel
+    import openpyxl
+    detail_book = openpyxl.load_workbook(io.BytesIO(
+        write_common_excel(detail_recs, detail_fields, detail_issues)))
+    check('统一明细表生成独立Excel工作表',
+          any(name.startswith('明细-交易明细') for name in detail_book.sheetnames),
+          detail_book.sheetnames)
+
+    long_pages = []
+    for page_no in range(1, 86):
+        is_same = page_no in (1, 85)
+        long_pages.append({
+            '_filename': 'long-mix.pdf', '_page': page_no,
+            '_document_type': '类型甲' if is_same else '类型%02d' % page_no,
+            '_document_no': 'LONG-A' if is_same else None,
+            '_page_role': 'first' if page_no == 1 else
+                          ('continuation' if page_no == 85 else 'single'),
+            '_is_continuation': page_no == 85,
+            '_identity_hints': [], '_page_summary': '',
+            'common_value': '甲值' if is_same else '值%02d' % page_no,
+            '_field_meta': {'common_value': {'status': 'found', 'confidence': 'high'}},
+            '_confidence': 'high', '_evidence': 'native_text',
+        })
+
+    def splitting_boundary_ai(kind, system, user, max_tokens, image_b64=None):
+        payload = json.loads(user)
+        return json.dumps({'pages': [
+            {'page': p['page'], 'anchor_page': p['page'],
+             'document_type': p['initial_document_type'],
+             'document_no': p['initial_document_no'],
+             'confidence': 'high', 'reason': '故意逐页拆分'}
+            for p in payload['pages']
+        ]}, ensure_ascii=False), 'end_turn'
+
+    CM.refine_document_boundaries(splitting_boundary_ai, long_pages, common_fields)
+    long_recs, _ = CM.assemble_common_pages(long_pages, common_fields)
+    check('长文件跨分段同编号页面仍归为一份',
+          any(r['_pages'] == '1+85' for r in long_recs),
+          [r['_pages'] for r in long_recs])
 
     fields_nc = normalize_fields([
         {'key': 'title', 'label': '标题', 'type': 'text'},
@@ -193,6 +298,17 @@ def offline():
           P.PdfFile('s.pdf', scan_pdf).scan().pages[0].kind == 'scanned')
     check('空白页判定 blank',
           P.PdfFile('b.pdf', blank_pdf).scan().pages[0].kind == 'blank')
+    from PIL import Image, ImageDraw
+    image_buf = io.BytesIO()
+    image = Image.new('RGB', (900, 1200), 'white')
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((80, 80, 820, 1100), outline='black', width=8)
+    draw.text((120, 140), 'IMAGE RECEIPT 2026-07-12 TOTAL 100', fill='black')
+    image.save(image_buf, format='PNG')
+    image_bytes = image_buf.getvalue()
+    image_file = P.open_file('票据图片.png', image_bytes).scan()
+    check('普通图片按扫描页接入', image_file.page_count == 1 and
+          image_file.pages[0].kind == 'scanned' and image_file.render(0).size[0] > 0)
 
     # OCR 测试桩：扫描页由桩提供文本（模拟 rapidocr）
     P.ocr_layout = lambda img, limit=6000: DELIVERY_OCR
@@ -231,8 +347,8 @@ def offline():
     check('A记录未触发复核', rec_a['_repaired'] is False)
     p1_extract_calls = [c for c in sim.calls if c[1] == ('税票样例.pdf', 1)]
     check('坏JSON触发提醒重试(p1≥2次)', len(p1_extract_calls) >= 2, sim.calls)
-    check('截断触发升额到32768(p2)',
-          any(c[1] == ('税票样例.pdf', 2) and c[2] == 32768 for c in sim.calls))
+    check('截断触发升额到3276800(p2)',
+          any(c[1] == ('税票样例.pdf', 2) and c[2] == 3276800 for c in sim.calls))
     check('评级聚合', rec_b['_confidence'] == 'high')
     dl = client.get('/download?job=' + res['job'])
     check('Excel按job下载', dl.status_code == 200 and dl.data[:2] == b'PK',
@@ -266,6 +382,52 @@ def offline():
     d = r.get_json()
     check('ping 文本/视觉探测', d['text_ok'] and d['vision_ok'], d)
 
+    print('\n[链路4] 异构票据 · AI归纳公共字段 → 统一提取 → 非连续续页归组')
+    APP._AI_CALL_OVERRIDE = CommonSimAI()
+    r = client.post('/api/common/analyze', data={
+        'files': [(io.BytesIO(tax_pdf), '混合文档.pdf')]})
+    d = r.get_json()
+    check('AI公共字段分析返回方案', r.status_code == 200 and len(d.get('fields', [])) == 2,
+          d)
+    check('公共字段保留语义来源与覆盖率',
+          d['fields'][0].get('source_variants') == ['日期栏'] and
+          d['fields'][0].get('coverage') == 1.0, d['fields'][0])
+    resp = client.post('/common/extract', data={
+        'fields': json.dumps(d['fields'], ensure_ascii=False),
+        'document_types': json.dumps(d['document_types'], ensure_ascii=False),
+        'files': [(io.BytesIO(tax_pdf), '混合文档.pdf')]})
+    evs = sse_events(resp.data)
+    res = next((e for e in evs if e['type'] == 'result'), None)
+    check('统一提取端点完成', res is not None and res.get('mode') == 'common', res)
+    check('统一模式续页归组为两份逻辑文档',
+          res and res['records'] == 2 and any(r['_pages'] == '2+3' for r in res['rows']),
+          res and res['rows'])
+    check('统一结果保留原字段与证据',
+          res and res['rows'][0]['_field_meta']['document_date']['source_label'] == '日期栏')
+    dl = client.get('/download?job=' + res['job']) if res else None
+    check('统一模式Excel下载', dl is not None and dl.status_code == 200 and dl.data[:2] == b'PK')
+
+    APP._AI_CALL_OVERRIDE = CommonSimAI()
+    resp = client.post('/common/run', data={
+        'files': [(io.BytesIO(tax_pdf), '一键混合文档.pdf')]})
+    evs = sse_events(resp.data)
+    schema = next((e for e in evs if e['type'] == 'schema'), None)
+    one_click = next((e for e in evs if e['type'] == 'result'), None)
+    check('一键模式自动归纳字段并继续提取',
+          schema is not None and len(schema.get('fields', [])) == 2 and
+          one_click is not None and one_click.get('records') == 2,
+          {'schema': schema, 'result': one_click})
+
+    APP._AI_CALL_OVERRIDE = CommonSimAI()
+    resp = client.post('/common/extract', data={
+        'fields': json.dumps(d['fields'], ensure_ascii=False),
+        'document_types': json.dumps(d['document_types'], ensure_ascii=False),
+        'files': [(io.BytesIO(image_bytes), '直接上传票据.png')]})
+    image_result = next((e for e in sse_events(resp.data) if e['type'] == 'result'), None)
+    check('图片直接上传统一提取全链路',
+          image_result is not None and image_result.get('records') == 1,
+          image_result)
+
     print('\n[边界] 破损文件与空字段')
     APP._AI_CALL_OVERRIDE = SimAI()
     resp = client.post('/extract', data={
@@ -284,8 +446,9 @@ def offline():
     check('空字段定义→400', r.status_code == 400)
     r = client.get('/')
     check('首页模板渲染', r.status_code == 200
-          and '票据智能提取台' in r.get_data(as_text=True)
-          and '求和校验' in r.get_data(as_text=True))
+           and '票据智能提取台' in r.get_data(as_text=True)
+           and '求和校验' in r.get_data(as_text=True)
+           and '不同票据统一字段' in r.get_data(as_text=True))
 
     APP._AI_CALL_OVERRIDE = None
 
@@ -308,7 +471,7 @@ def live(vision):
     print('网关 %s · 模型 %s' % (cfg.base_url, cfg.model))
     ai = AIClient(cfg).call
     t0 = time.time()
-    txt, _ = ai('text', '你是回显器。', '只回复两个字：OK', 24)
+    txt, _ = ai('text', '你是回显器。', '只回复两个字：OK', 2400)
     print('  ✓ 文本连通 %dms → %r' % ((time.time() - t0) * 1000, txt[:20]))
 
     tax = build_tax_pdf()
@@ -332,7 +495,7 @@ def live(vision):
         b64 = P.pil_to_b64(pf.render(0, target_side=1400), quality=85)
         t0 = time.time()
         txt, _ = ai('vision', '你是文档助手。',
-                    '这页是什么单据？只回答单据名称。', 64, image_b64=b64)
+                    '这页是什么单据？只回答单据名称。', 6400, image_b64=b64)
         print('  ✓ 视觉连通 %.1fs → %r' % (time.time() - t0, txt[:60]))
     pf.close()
 

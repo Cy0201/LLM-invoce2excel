@@ -26,8 +26,8 @@ from merge import to_num
 
 logger = logging.getLogger('extractor')
 
-MAX_TOKENS_CAP = int(os.environ.get('MAX_TOKENS_CAP', '16384'))
-HARD_TOKENS_CAP = int(os.environ.get('HARD_TOKENS_CAP', '32768'))
+MAX_TOKENS_CAP = int(os.environ.get('MAX_TOKENS_CAP', '1638400'))
+HARD_TOKENS_CAP = int(os.environ.get('HARD_TOKENS_CAP', '3276800'))
 
 _TYPE_TOKEN = {
     'text': '"字符串"或null',
@@ -115,7 +115,7 @@ def est_max_tokens(fields, evidence, assume_rows=None):
     else:
         rows_est = assume_rows or 30      # 纯视觉页看不见文本，按较密页面假定
     est = 700 + 40 * scalars + (rows_est * (15 + 14 * cols) if cols else 0)
-    return max(32768, min(MAX_TOKENS_CAP, est))
+    return max(1638400, min(MAX_TOKENS_CAP, est))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -177,7 +177,7 @@ def _ask_json(ai_call, kind_tag, system, user, max_tokens, image_b64, ctx):
         return parse_json(text)
     except ValueError:
         logger.info('%sJSON 解析失败，携提醒重试一次', ctx)
-        text, _ = _once(user + _JSON_REMIND, max(max_tokens, 65536))
+        text, _ = _once(user + _JSON_REMIND, max(max_tokens, 6553600))
         return parse_json(text)
 
 
@@ -261,11 +261,11 @@ def _split_extract(fields, ai_call, user, with_image, image_b64, text_evidence, 
                  'description': 'high/medium/low 三选一', 'columns': []}]
         sys_s = build_system(scalars + meta)
         data.update(_ask_json(ai_call, 'vision' if with_image else 'text', sys_s,
-                              user, 65536, image_b64 if with_image else None,
+                              user, 6553600, image_b64 if with_image else None,
                               ctx + '[拆分·标量] '))
     for tf in tables:
         sys_t = build_system([tf])
-        mt = max(32768, min(HARD_TOKENS_CAP, est_max_tokens([tf], text_evidence) * 2))
+        mt = max(3276800, min(HARD_TOKENS_CAP, est_max_tokens([tf], text_evidence) * 2))
         try:
             td = _ask_json(ai_call, 'vision' if with_image else 'text', sys_t,
                            user, mt, image_b64 if with_image else None,

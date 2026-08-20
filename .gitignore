@@ -37,3 +37,7 @@ Thumbs.db
 # Uploaded documents (user data)
 uploads/
 results/
+
+# Local acceptance-test inputs (contain user/business data)
+/测试文件：*.pdf
+/img_v3_*.png

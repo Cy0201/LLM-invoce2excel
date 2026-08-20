@@ -20,7 +20,7 @@ import json
 
 from ai_client import AIResponseError
 
-_HARD_CAP = 32768
+_HARD_CAP = 3276800
 
 
 class SimAI(object):
@@ -86,6 +86,92 @@ class SimAI(object):
         if page_key in self.pages_truncate and max_tokens < _HARD_CAP and not repairing:
             return payload[:len(payload) // 2], 'max_tokens'
         return payload, 'end_turn'
+
+
+class CommonSimAI(object):
+    """统一字段模式的契约模拟器；只验证流程，不模拟真实语义能力。"""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, kind, system, user, max_tokens, image_b64=None):
+        page_key = _page_key(user)
+        self.calls.append((kind, page_key, int(max_tokens)))
+        if system.startswith('你是通用文档字段观察器'):
+            return json.dumps({
+                'document_type': '测试文档', 'page_role': 'unknown',
+                'fields': [
+                    {'source_label': '日期栏', 'semantic': '文档主要日期',
+                     'type': 'date', 'example': '2026-07-12'},
+                    {'source_label': '金额栏', 'semantic': '文档最终金额',
+                     'type': 'number', 'example': '100'},
+                ]}, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是跨格式文档字段建模器'):
+            return json.dumps({
+                'summary': '测试批次公共字段', 'document_types': ['测试文档'],
+                'fields': [
+                    {'key': 'document_date', 'label': '单据日期', 'type': 'date',
+                     'description': '当前文档最主要的形成日期',
+                     'source_variants': ['日期栏'], 'coverage': 1,
+                     'merge_confidence': 'high'},
+                    {'key': 'total_amount', 'label': '总金额', 'type': 'number',
+                     'description': '当前文档最终成立的整体金额',
+                     'source_variants': ['金额栏'], 'coverage': 1,
+                     'merge_confidence': 'high'},
+                ]}, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是异构文档统一字段提取器'):
+            page = page_key[1]
+            doc_no = 'DOC-A' if page == 1 else ('DOC-B' if page == 2 else None)
+            role = 'single' if page == 1 else ('first' if page == 2 else 'continuation')
+            amount = 100 if page == 1 else (None if page == 2 else 200)
+            out = {
+                '_document_type': '测试文档', '_document_no': doc_no,
+                '_page_role': role, '_confidence': 'high',
+                'document_date': {
+                    'value': '2026-07-%02d' % (11 + min(page, 2)),
+                    'source_label': '日期栏', 'evidence': '日期栏原文',
+                    'confidence': 'high', 'status': 'found'},
+                'total_amount': {
+                    'value': amount, 'source_label': '金额栏' if amount else None,
+                    'evidence': '金额栏原文' if amount else None,
+                    'confidence': 'high',
+                    'status': 'found' if amount is not None else 'not_found'},
+            }
+            return json.dumps(out, ensure_ascii=False), 'end_turn'
+        if system.startswith('你是通用文档分页与边界复核器'):
+            payload = json.loads(user)
+            active = payload.get('active_documents') or []
+            latest = active[-1]['anchor_page'] if active else None
+            pages = []
+            for item in payload.get('pages') or []:
+                page = int(item['page'])
+                role = item.get('initial_page_role')
+                anchor = latest if role == 'continuation' and latest else page
+                if role != 'continuation':
+                    latest = page
+                pages.append({
+                    'page': page, 'anchor_page': anchor,
+                    'document_type': item.get('initial_document_type') or '测试文档',
+                    'document_no': item.get('initial_document_no'),
+                    'confidence': 'high', 'reason': '模拟器按首页/续页信号复核',
+                })
+            return json.dumps({'pages': pages}, ensure_ascii=False), 'end_turn'
+        return SimAI()(kind, system, user, max_tokens, image_b64)
+
+
+class ThinkingOnceClient(object):
+    """测试 AIClient 的仅思考自动重试，不发网络请求。"""
+
+    def __init__(self):
+        self._prefill_ok = True
+        self.calls = []
+
+    def invoke(self, user):
+        from ai_client import AIResponseError
+        self.calls.append((user, self._prefill_ok))
+        if len(self.calls) == 1:
+            raise AIResponseError('只有思考', only_thinking=True)
+        return '{"ok":true}', 'end_turn'
 
 
 # ══════════════════════════════════════════════════════════════

@@ -20,8 +20,13 @@ export SCAN_MAX_SIDE="${SCAN_MAX_SIDE:-2000}"       # 扫描页送模型的长�
 export REPAIR_IMG_SIDE="${REPAIR_IMG_SIDE:-2400}"   # 自动复核时的更高清长边
 export TEXT_WORKERS="${TEXT_WORKERS:-8}"            # 电子件文本请求并发
 export VISION_WORKERS="${VISION_WORKERS:-3}"        # 扫描件视觉请求并发
-export MAX_TOKENS_CAP="${MAX_TOKENS_CAP:-16384}"    # 单页常规输出上限
-export HARD_TOKENS_CAP="${HARD_TOKENS_CAP:-32768}"  # 截断升额后的硬上限
+export MAX_TOKENS_CAP="${MAX_TOKENS_CAP:-1638400}"    # 单页常规输出上限
+export HARD_TOKENS_CAP="${HARD_TOKENS_CAP:-3276800}"  # 截断升额后的硬上限
+export COMMON_OBSERVE_TOKENS="${COMMON_OBSERVE_TOKENS:-8192}"
+export COMMON_BATCH_TOKENS="${COMMON_BATCH_TOKENS:-16384}"
+export COMMON_ANALYZE_TOKENS="${COMMON_ANALYZE_TOKENS:-32768}"
+export COMMON_EXTRACT_TOKENS="${COMMON_EXTRACT_TOKENS:-65536}"
+export COMMON_SAMPLE_PAGES="${COMMON_SAMPLE_PAGES:-24}"
 export REPAIR_MAX="${REPAIR_MAX:-6}"                # 每次任务最多自动复核的记录数
 export AI_TIMEOUT="${AI_TIMEOUT:-300}"              # 单请求超时(秒)
 

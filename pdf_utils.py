@@ -37,7 +37,7 @@ import threading
 
 import pdfplumber
 import pypdfium2 as pdfium
-from PIL import Image
+from PIL import Image, ImageOps
 
 logger = logging.getLogger('pdf_utils')
 
@@ -186,6 +186,68 @@ class PdfFile(object):
                 except Exception:
                     pass
                 self._doc = None
+
+
+class ImageFile(object):
+    """把普通图片包装成与 PdfFile 相同的分页证据接口。
+
+    TIFF/GIF 等多帧图片按帧分页；JPG/PNG/WebP 等单图就是一页。图片始终走
+    视觉/OCR 通道，因此不会把压缩元数据误当作正文。
+    """
+    def __init__(self, name, data):
+        self.name = name
+        self.data = data
+        self.pages = []
+        self._lock = threading.Lock()
+
+    def scan(self):
+        with Image.open(io.BytesIO(self.data)) as img:
+            count = int(getattr(img, 'n_frames', 1) or 1)
+            for i in range(count):
+                img.seek(i)
+                frame = ImageOps.exif_transpose(img.copy()).convert('RGB')
+                gray = frame.copy()
+                gray.thumbnail((360, 360), Image.LANCZOS)
+                hist = gray.convert('L').histogram()
+                total = sum(hist) or 1
+                ink = sum(hist[:190]) / total
+                self.pages.append(PageInfo('blank' if ink < _BLANK_INK else 'scanned'))
+        return self
+
+    @property
+    def page_count(self):
+        return len(self.pages)
+
+    def render(self, idx, target_side=None):
+        target = int(target_side or SCAN_MAX_SIDE)
+        with self._lock, Image.open(io.BytesIO(self.data)) as img:
+            img.seek(idx)
+            frame = ImageOps.exif_transpose(img.copy()).convert('RGB')
+        if max(frame.size) > target:
+            frame.thumbnail((target, target), Image.LANCZOS)
+        return frame
+
+    def close(self):
+        return None
+
+
+_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.gif'}
+
+
+def open_file(name, data):
+    """按文件内容/扩展名打开 PDF 或图片，返回统一证据容器。"""
+    ext = os.path.splitext(str(name or ''))[1].lower()
+    if bytes(data[:8]).startswith(b'%PDF'):
+        return PdfFile(name, data)
+    if ext in _IMAGE_EXTENSIONS:
+        return ImageFile(name, data)
+    # 扩展名可能被聊天工具或扫描仪改掉：先尝试图片，再让 PDF 抛出明确错误。
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.verify()
+        return ImageFile(name, data)
+    except Exception:
+        return PdfFile(name, data)
 
 
 # ══════════════════════════════════════════════════════════════
