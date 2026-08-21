@@ -420,8 +420,9 @@ def _fast_split_loaded(loaded, cfg, emit):
     fallback_pages = sum(1 for page in pages if page.get('_layout_fallback'))
     if fallback_pages:
         emit({'type': 'progress', 'mode': 'split',
-              'message': 'AI分类未覆盖部分页面，已按重复版式兜底拆分 %d 页…' % fallback_pages,
+              'message': 'AI分类未覆盖部分页面，已按标题和版式证据兜底拆分 %d 页…' % fallback_pages,
               'pct': 84})
+    pages = SM.split_different_formats(pages)
     pages = SM.apply_local_boundaries(pages)
     groups = SM.type_groups(pages)
     if not groups:
@@ -453,7 +454,7 @@ def _fast_split_loaded(loaded, cfg, emit):
           'total_pages': total_pages, 'blank_pages': blank_pages,
           'files': len(pfs), 'groups': public_groups,
           'fallback_pages': fallback_pages,
-          'classification_warning': ('部分页面未得到 AI 分类，已按重复版式拆分；请核对分类名称。'
+          'classification_warning': ('部分页面未得到 AI 分类，已按标题和版式证据拆分；请核对分类名称。'
                                       if fallback_pages else ''),
           'bad_files': [{'filename': n, 'error': str(e)[:180]} for n, e in bad],
           'download_url': '/download?job=%s' % job_id})

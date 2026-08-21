@@ -607,12 +607,12 @@ function renderSplitResult(res){
   state.job=res.job;state.documentTypes=(res.groups||[]).map(g=>g.document_type).filter(Boolean);
   $("#resultBox").style.display="block";$("#fieldEditor").style.display="none";
   $("#docType").style.display="block";
-  $("#docType .dt").textContent="已分类 "+state.documentTypes.length+" 类，共 "+(res.total_pages||0)+" 页；请下载后分别上传提取";
+  $("#docType .dt").textContent="已拆分 "+state.documentTypes.length+" 个可独立上传类型，共 "+(res.total_pages||0)+" 页；请下载后分别上传提取";
   const groups=res.groups||[],bad=res.bad_files||[];
   $("#chips").innerHTML=
     '<span class="chip"><i class="fa-solid fa-file-lines"></i> '+(res.total_pages||0)+' 页'+
       (res.blank_pages?'（空白 '+res.blank_pages+'）':'')+'</span>'+
-    '<span class="chip ok"><i class="fa-solid fa-layer-group"></i> '+groups.length+' 类文档</span>'+
+      '<span class="chip ok"><i class="fa-solid fa-layer-group"></i> '+groups.length+' 个可独立上传类型</span>'+
     '<span class="chip"><i class="fa-solid fa-file-export"></i> '+groups.reduce((n,g)=>n+(g.page_count||0),0)+' 页已保存</span>'+
     (res.fallback_pages?'<span class="chip warn"><i class="fa-solid fa-triangle-exclamation"></i> '+res.fallback_pages+' 页按版式兜底</span>':'')+
     (bad.length?'<span class="chip warn">'+bad.length+' 个文件无法解析</span>':'');

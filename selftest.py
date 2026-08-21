@@ -162,6 +162,7 @@ def offline():
     from extractor import coerce, norm_date
     from claude_sim import SimAI, CommonSimAI, MixedSimAI
     import common_mode as CM
+    import split_mode as SM
 
     print('\n[单元] 基础构件')
     cols = parse_columns('列：seq 序号, hs_code 税号, name 货物名称')
@@ -499,6 +500,23 @@ def offline():
     retry_dir = APP.JOBS.get(retry_job, {}).get('split_dir') if retry_job else ''
     if retry_dir and os.path.isdir(retry_dir):
         shutil.rmtree(retry_dir, ignore_errors=True)
+
+    title_fallback_pages = []
+    for page_no, title in ((1, '业务申报表'), (2, '附列资料（一）'),
+                           (3, '明细资料'), (4, '业务申报表'),
+                           (5, '附列资料（一）')):
+        title_fallback_pages.append({
+            '_filename': '标题兜底.pdf', '_page': page_no, '_kind': 'native',
+            '_layout_text': title + '\n主体：示例公司', '_source_pf': None,
+            '_source_idx': None, 'document_type': '未知文档', 'document_no': None,
+            'page_role': 'unknown', 'anchor_page': page_no,
+            'confidence': 'low', 'reason': ''})
+    SM.apply_layout_fallback(title_fallback_pages)
+    title_groups = SM.type_groups(title_fallback_pages)
+    check('不同页面标题兜底分别分组',
+          len(title_groups) == 3 and
+          sorted(len(group['pages']) for group in title_groups) == [1, 2, 2],
+          title_groups)
 
     print('\n[边界] 破损文件与空字段')
     APP._AI_CALL_OVERRIDE = SimAI()

@@ -14,9 +14,10 @@ from collections import OrderedDict
 import common_mode as CM
 
 
-FAST_CLASSIFY_SYSTEM = """你是快速异构文档分拣器。只根据页面证据判断页面所属的文档类型和逻辑文档，
-不要提取字段，不要总结字段，不要输出解释或 markdown。文档类型必须是简短、稳定的业务类别，
-同一类文档即使版式不同也使用同一个类别名称；同一业务下标题或表格结构明显不同、后续字段方案也不同的子表，必须保留稳定的子类型名称。
+FAST_CLASSIFY_SYSTEM = """你是快速异构文档分拣器。只根据页面证据判断页面所属的可独立上传的文档/表单类型和逻辑文档，
+不要提取字段，不要总结字段，不要输出解释或 markdown。文档类型必须是简短、稳定的类别，
+只有页面用途、字段集合和版式都相同的页面才能使用同一个类别名称；主表、附表、附件、明细表、签章页、续页或不同版式，
+只要后续适合的字段方案或精准提取方式不同，就必须保留不同的稳定子类型名称，不能因为它们来自同一套材料就合并。
 
 输入是同一来源文件按顺序排列的页面摘要，可能存在合同、发票、发货单、银行对账单等类型交错。
 输出严格为 JSON：
@@ -29,7 +30,8 @@ FAST_CLASSIFY_SYSTEM = """你是快速异构文档分拣器。只根据页面证
 规则：
 1. anchor_page 必须是本页或前面同一来源文件中该逻辑文档首页的页码；续页指向首页。
 2. 有明确单号时优先用单号归组；没有单号时综合标题、主体、日期、续页措辞和内容连续性。
-3. 不同文档类型不能合并；同一类型的不同版式可以归为同一类别，但不能因为类型相同就合并不同单据。
+3. 不同文档/表单类型不能合并；同一类型的不同版式或不同字段结构也不要合并。
+   只有确实是同一张文档的续页才指向同一个 anchor_page；同一套材料内部的主表、附表、附件和明细页默认分别归类。
 4. 有标题或表格证据时不要输出“未知文档”；只有证据确实不足时才可用“未知文档”。
 5. 只返回输入页码，不得遗漏页面，不得增加页面。"""
 
@@ -77,7 +79,9 @@ def _normalize_items(raw, pf, indices):
             except (TypeError, ValueError):
                 continue
     out = []
-    valid_pages = {i + 1 for i in indices}
+    # 响应是按页逐项归一化的，但 anchor_page 可能指向当前批次之前的
+    # 同一来源页；不能因为这里传入了单页索引就把跨页锚点改回本页。
+    valid_pages = set(range(1, len(pf.pages) + 1))
     for idx in indices:
         pno = idx + 1
         item = dict(returned.get(pno) or _fallback_item(pf, idx))
@@ -196,6 +200,7 @@ def _layout_signature(page):
         orientation = 'portrait' if height >= width else 'landscape'
         return json.dumps((
             orientation,
+            round(float(width) / max(1.0, float(height)), 1),
             int(round(float(lines) / 40.0)),
             int(round(float(images))),
         ), ensure_ascii=False)
@@ -217,6 +222,55 @@ def _layout_signature(page):
     return json.dumps(shape, ensure_ascii=False)
 
 
+def _title_candidate(text):
+    """取页面开头最像标题的短行，不依赖具体票据名称。"""
+    for raw in str(text or '').splitlines():
+        line = re.sub(r'\s+', ' ', raw).strip(' |\t')
+        compact = re.sub(r'[\s|]+', '', line)
+        if len(compact) < 3:
+            continue
+        if re.fullmatch(r'(附件|附表|附录)\d*[:：]?', compact):
+            continue
+        if re.fullmatch(r'[\d./：:()（）\-—_]+', compact):
+            continue
+        if len(compact) <= 16 and re.search(r'(时间|日期|单位|页码|第\d+页)', compact):
+            continue
+        return compact[:80]
+    return ''
+
+
+def _title_key(text):
+    return re.sub(r'[^0-9a-z\u4e00-\u9fff]+', '', str(text or '').lower())
+
+
+def _title_label(text):
+    title = _title_candidate(text)
+    return title[:48] or '未知文档'
+
+
+def _populate_layout_evidence(page):
+    """补充版式/文本证据；不读取业务字段，也不绑定具体票据模板。"""
+    pf = page.get('_source_pf')
+    idx = page.get('_source_idx')
+    if pf is not None and idx is not None:
+        info = pf.pages[int(idx)]
+        page['_layout_text'] = info.text or info.hint or ''
+        if pf.__class__.__name__ == 'PdfFile':
+            try:
+                cache = getattr(pf, '_split_layout_meta', None)
+                if cache is None:
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(pf.data)) as pdf:
+                        cache = [(float(item.width), float(item.height),
+                                  len(item.lines), len(item.chars), len(item.images))
+                                 for item in pdf.pages]
+                    pf._split_layout_meta = cache
+                if int(idx) < len(cache):
+                    page['_layout_meta'] = cache[int(idx)]
+            except Exception:
+                pass
+
+
 def apply_layout_fallback(pages):
     """AI 全部失败时按重复版式拆分，避免所有页静默落入一个“未知文档”。"""
     labels = OrderedDict()
@@ -227,35 +281,82 @@ def apply_layout_fallback(pages):
         dtype = _canonical(page.get('document_type'))
         if dtype not in ('', '未知文档', '未知'):
             continue
-        pf = page.get('_source_pf')
-        idx = page.get('_source_idx')
-        if pf is not None and idx is not None:
-            info = pf.pages[int(idx)]
-            page['_layout_text'] = info.text or info.hint or ''
-            if pf.__class__.__name__ == 'PdfFile':
-                try:
-                    cache = getattr(pf, '_split_layout_meta', None)
-                    if cache is None:
-                        import pdfplumber
-                        with pdfplumber.open(io.BytesIO(pf.data)) as pdf:
-                            cache = [(float(item.width), float(item.height),
-                                      len(item.lines), len(item.chars), len(item.images))
-                                     for item in pdf.pages]
-                        pf._split_layout_meta = cache
-                    if int(idx) < len(cache):
-                        page['_layout_meta'] = cache[int(idx)]
-                except Exception:
-                    pass
-        signature = _layout_signature(page)
+        _populate_layout_evidence(page)
+
+    for page in sorted(pages, key=lambda p: (str(p.get('_filename', '')),
+                                             int(p.get('_page', 0)))):
+        if page.get('_blank'):
+            continue
+        dtype = _canonical(page.get('document_type'))
+        if dtype not in ('', '未知文档', '未知'):
+            continue
+        title = _title_candidate(page.get('_layout_text'))
+        title_key = _title_key(title)
+        layout_key = _layout_signature(page)
+        signature = ('title:' + title_key + '|layout:' + layout_key
+                     if len(title_key) >= 4 else layout_key)
+        if title_key:
+            page['_title_fallback'] = True
         if not signature:
             continue
         if signature not in labels:
-            labels[signature] = '未知文档·版式%02d' % (len(labels) + 1)
+            labels[signature] = (_title_label(page.get('_layout_text'))
+                                 if title_key else '未知文档·版式%02d' % (len(labels) + 1))
         label = labels[signature]
         page['document_type'] = label
         page['reason'] = (str(page.get('reason') or '') + '；按重复版式兜底分组')[:120]
         page['confidence'] = 'low'
         page['_layout_fallback'] = True
+    return pages
+
+
+def split_different_formats(pages):
+    """把同一 AI 类别下用途/标题/版式不同的页面拆成可独立上传的子类型。"""
+    ordered = sorted(pages, key=lambda p: (str(p.get('_filename', '')),
+                                          int(p.get('_page', 0))))
+    signatures = OrderedDict()
+    page_signatures = {}
+    anchor_signatures = {}
+    for page in ordered:
+        if page.get('_blank'):
+            continue
+        dtype = _safe_type(page.get('document_type'))
+        base = _canonical(dtype)
+        if base in ('', '未知文档', '未知'):
+            continue
+        _populate_layout_evidence(page)
+        title_key = _title_key(_title_candidate(page.get('_layout_text')))
+        layout_key = _layout_signature(page)
+        signature = ('title:' + title_key + '|layout:' + layout_key
+                     if len(title_key) >= 4 else 'layout:' + layout_key)
+        try:
+            anchor = int(page.get('anchor_page'))
+        except (TypeError, ValueError):
+            anchor = int(page.get('_page', 0))
+        if page.get('page_role') == 'continuation' and anchor < int(page.get('_page', 0)):
+            signature = anchor_signatures.get((str(page.get('_filename', '')), base, anchor),
+                                              signature)
+        page_signatures[id(page)] = signature
+        anchor_signatures[(str(page.get('_filename', '')), base,
+                           int(page.get('_page', 0)))] = signature
+        signatures.setdefault(base, OrderedDict()).setdefault(signature, len(signatures.get(base, {})) + 1)
+    for page in ordered:
+        if page.get('_blank'):
+            continue
+        dtype = _safe_type(page.get('document_type'))
+        base = _canonical(dtype)
+        variants = signatures.get(base)
+        if not variants or len(variants) <= 1:
+            continue
+        signature = page_signatures.get(id(page), '')
+        variant_no = variants.get(signature)
+        if not variant_no:
+            continue
+        page['document_type'] = '%s·版式%02d' % (dtype, variant_no)
+        page['reason'] = (str(page.get('reason') or '') +
+                          '；检测到页面用途或版式不同，拆为独立子类型')[:120]
+        page['confidence'] = 'low' if page.get('_layout_fallback') else page.get('confidence', 'low')
+        page['_format_split'] = True
     return pages
 
 
