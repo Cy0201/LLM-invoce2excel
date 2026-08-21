@@ -115,10 +115,10 @@ Excel 导出会根据模式生成对应的汇总、明细、字段证据和文�
 | `REPAIR_IMG_SIDE` | `2400` | 复核图片长边像素 |
 | `TEXT_WORKERS` | `8` | 文本任务并发数 |
 | `VISION_WORKERS` | `3` | 图片任务并发数 |
-| `FAST_SPLIT_TEXT_WORKERS` | `TEXT_WORKERS` | 异构分拣电子页并发文件数 |
-| `FAST_SPLIT_VISION_WORKERS` | `VISION_WORKERS` | 异构分拣扫描页并发数 |
-| `FAST_BATCH_PAGES` | `18` | 电子 PDF 每次分类请求的页数 |
-| `FAST_CLASSIFY_TOKENS` | `16384` | 异构分拣分类 JSON 输出上限 |
+| `FAST_SPLIT_TEXT_WORKERS` | `min(TEXT_WORKERS,3)` | 异构分拣电子页并发文件数 |
+| `FAST_SPLIT_VISION_WORKERS` | `min(VISION_WORKERS,2)` | 异构分拣扫描页并发数 |
+| `FAST_BATCH_PAGES` | `6` | 电子 PDF 每次分类请求的页数；批量失败会自动改单页重试 |
+| `FAST_CLASSIFY_TOKENS` | `1638400` | 异构分拣分类 JSON 输出上限 |
 | `SPLIT_ROOT` | `results/split` | 异构分组 PDF 的本地保存目录 |
 | `MAX_TOKENS_CAP` | `1638400` | 同类票据常规输出上限 |
 | `HARD_TOKENS_CAP` | `3276800` | 同类票据截断重试时的输出上限 |

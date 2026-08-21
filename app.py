@@ -58,8 +58,10 @@ ANALYZE_IMG_SIDE = int(os.environ.get('ANALYZE_IMG_SIDE', '1600'))
 REPAIR_IMG_SIDE = int(os.environ.get('REPAIR_IMG_SIDE', '2400'))
 SPLIT_ROOT = os.environ.get(
     'SPLIT_ROOT', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', 'split'))
-FAST_SPLIT_TEXT_WORKERS = int(os.environ.get('FAST_SPLIT_TEXT_WORKERS', str(TEXT_WORKERS)))
-FAST_SPLIT_VISION_WORKERS = int(os.environ.get('FAST_SPLIT_VISION_WORKERS', str(VISION_WORKERS)))
+FAST_SPLIT_TEXT_WORKERS = int(os.environ.get(
+    'FAST_SPLIT_TEXT_WORKERS', str(max(1, min(3, TEXT_WORKERS)))))
+FAST_SPLIT_VISION_WORKERS = int(os.environ.get(
+    'FAST_SPLIT_VISION_WORKERS', str(max(1, min(2, VISION_WORKERS)))))
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
@@ -414,6 +416,12 @@ def _fast_split_loaded(loaded, cfg, emit):
         for pool in pools:
             pool.shutdown(wait=True)
 
+    pages = SM.apply_layout_fallback(pages)
+    fallback_pages = sum(1 for page in pages if page.get('_layout_fallback'))
+    if fallback_pages:
+        emit({'type': 'progress', 'mode': 'split',
+              'message': 'AI分类未覆盖部分页面，已按重复版式兜底拆分 %d 页…' % fallback_pages,
+              'pct': 84})
     pages = SM.apply_local_boundaries(pages)
     groups = SM.type_groups(pages)
     if not groups:
@@ -432,7 +440,7 @@ def _fast_split_loaded(loaded, cfg, emit):
     for group in saved:
         stored = {k: group.get(k) for k in (
             'key', 'document_type', 'file_name', 'file_path', 'page_count',
-            'logical_documents', 'source_files', 'document_segments')}
+            'logical_documents', 'fallback_pages', 'source_files', 'document_segments')}
         stored_groups.append(stored)
         public = {k: stored.get(k) for k in stored if k != 'file_path'}
         public['download_url'] = '/mixed/download?job=%s&type=%s' % (
@@ -444,6 +452,9 @@ def _fast_split_loaded(loaded, cfg, emit):
     emit({'type': 'result', 'mode': 'split', 'job': job_id,
           'total_pages': total_pages, 'blank_pages': blank_pages,
           'files': len(pfs), 'groups': public_groups,
+          'fallback_pages': fallback_pages,
+          'classification_warning': ('部分页面未得到 AI 分类，已按重复版式拆分；请核对分类名称。'
+                                      if fallback_pages else ''),
           'bad_files': [{'filename': n, 'error': str(e)[:180]} for n, e in bad],
           'download_url': '/download?job=%s' % job_id})
 

@@ -477,6 +477,29 @@ def offline():
                 # results/ 下且已被 .gitignore 忽略，不影响测试和后续任务。
                 pass
 
+    class BatchFailMixedSim(MixedSimAI):
+        def __call__(self, kind, system, user, max_tokens, image_b64=None):
+            if system.startswith('你是快速异构文档分拣器'):
+                payload = json.loads(user)
+                if len(payload.get('pages') or []) > 1:
+                    raise RuntimeError('模拟批量上下文失败')
+            return super().__call__(kind, system, user, max_tokens, image_b64)
+
+    APP._AI_CALL_OVERRIDE = BatchFailMixedSim()
+    retry_resp = client.post('/mixed/split', data={
+        'files': [(io.BytesIO(tax_pdf), '批量重试.pdf')]})
+    retry_result = next((e for e in sse_events(retry_resp.data)
+                         if e['type'] == 'result'), None)
+    retry_groups = retry_result.get('groups', []) if retry_result else []
+    check('分类批量失败自动改单页重试',
+          retry_resp.status_code == 200 and retry_result is not None and
+          set(g.get('document_type') for g in retry_groups) == {'合同', '发票'} and
+          not retry_result.get('fallback_pages'), retry_result)
+    retry_job = retry_result.get('job') if retry_result else ''
+    retry_dir = APP.JOBS.get(retry_job, {}).get('split_dir') if retry_job else ''
+    if retry_dir and os.path.isdir(retry_dir):
+        shutil.rmtree(retry_dir, ignore_errors=True)
+
     print('\n[边界] 破损文件与空字段')
     APP._AI_CALL_OVERRIDE = SimAI()
     resp = client.post('/extract', data={

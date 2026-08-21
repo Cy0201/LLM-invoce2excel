@@ -16,7 +16,7 @@ import common_mode as CM
 
 FAST_CLASSIFY_SYSTEM = """你是快速异构文档分拣器。只根据页面证据判断页面所属的文档类型和逻辑文档，
 不要提取字段，不要总结字段，不要输出解释或 markdown。文档类型必须是简短、稳定的业务类别，
-同一类文档即使版式不同也使用同一个类别名称。
+同一类文档即使版式不同也使用同一个类别名称；同一业务下标题或表格结构明显不同、后续字段方案也不同的子表，必须保留稳定的子类型名称。
 
 输入是同一来源文件按顺序排列的页面摘要，可能存在合同、发票、发货单、银行对账单等类型交错。
 输出严格为 JSON：
@@ -30,11 +30,12 @@ FAST_CLASSIFY_SYSTEM = """你是快速异构文档分拣器。只根据页面证
 1. anchor_page 必须是本页或前面同一来源文件中该逻辑文档首页的页码；续页指向首页。
 2. 有明确单号时优先用单号归组；没有单号时综合标题、主体、日期、续页措辞和内容连续性。
 3. 不同文档类型不能合并；同一类型的不同版式可以归为同一类别，但不能因为类型相同就合并不同单据。
-4. 只返回输入页码，不得遗漏页面，不得增加页面。"""
+4. 有标题或表格证据时不要输出“未知文档”；只有证据确实不足时才可用“未知文档”。
+5. 只返回输入页码，不得遗漏页面，不得增加页面。"""
 
-FAST_CLASSIFY_TOKENS = int(os.environ.get('FAST_CLASSIFY_TOKENS', '16384'))
-FAST_BATCH_PAGES = int(os.environ.get('FAST_BATCH_PAGES', '18'))
-FAST_TEXT_CHARS = int(os.environ.get('FAST_TEXT_CHARS', '2600'))
+FAST_CLASSIFY_TOKENS = int(os.environ.get('FAST_CLASSIFY_TOKENS', '1638400'))
+FAST_BATCH_PAGES = int(os.environ.get('FAST_BATCH_PAGES', '6'))
+FAST_TEXT_CHARS = int(os.environ.get('FAST_TEXT_CHARS', '2200'))
 
 
 def _safe_type(value):
@@ -98,24 +99,64 @@ def _normalize_items(raw, pf, indices):
     return out
 
 
+def _returned_page_items(raw):
+    raw = raw.get('pages') if isinstance(raw, dict) else raw
+    if not isinstance(raw, list):
+        return {}
+    out = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            out[int(item.get('page'))] = item
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def classify_native_batches(ai_call, pf, indices, emit=None, ctx='[快速分拣] '):
-    """电子 PDF 用批量文本请求，通常每 18 页只需要一次 AI 调用。"""
+    """电子 PDF 先按小批量请求；批量失败或漏页时自动降为单页重试。"""
     all_items = []
     for start in range(0, len(indices), max(1, FAST_BATCH_PAGES)):
         batch = indices[start:start + max(1, FAST_BATCH_PAGES)]
         user = json.dumps({'source_file': pf.name,
                            'pages': [_page_payload(pf, i) for i in batch]}, ensure_ascii=False)
+        raw, batch_error = None, None
         try:
             raw = CM._ask_json(ai_call, 'text', FAST_CLASSIFY_SYSTEM, user,
                                FAST_CLASSIFY_TOKENS, None,
                                ctx + '%s p%d-%d ' % (pf.name, batch[0] + 1, batch[-1] + 1))
         except Exception as exc:
-            raw = {'pages': []}
-            for i in batch:
-                item = _fallback_item(pf, i)
-                item['reason'] = '快速分拣请求失败：%s' % str(exc)[:70]
-                raw['pages'].append(item)
-        all_items.extend(_normalize_items(raw, pf, batch))
+            batch_error = '%s: %s' % (type(exc).__name__, str(exc)[:120])
+        returned = _returned_page_items(raw)
+        recovered = {}
+        for idx in batch:
+            pno = idx + 1
+            if pno in returned:
+                recovered[pno] = _normalize_items(
+                    {'pages': [returned[pno]]}, pf, [idx])[0]
+                continue
+            # 批量请求可能因为上下文过长、网关截断或 JSON 不完整而漏页。
+            # 只重试缺失页，正常批次仍保持低请求数。
+            try:
+                single_user = json.dumps({'source_file': pf.name,
+                                          'pages': [_page_payload(pf, idx)]}, ensure_ascii=False)
+                single_raw = CM._ask_json(
+                    ai_call, 'text', FAST_CLASSIFY_SYSTEM, single_user,
+                    FAST_CLASSIFY_TOKENS, None,
+                    ctx + '%s p%d 单页重试 ' % (pf.name, pno))
+                single_items = _returned_page_items(single_raw)
+                if pno not in single_items:
+                    raise ValueError('单页响应未返回当前页')
+                recovered[pno] = _normalize_items(
+                    {'pages': [single_items[pno]]}, pf, [idx])[0]
+            except Exception as exc:
+                item = _fallback_item(pf, idx)
+                detail = batch_error or ('批量响应漏页；单页重试失败：%s' % str(exc)[:90])
+                item['reason'] = 'AI分拣失败，待按版式兜底：%s' % detail[:120]
+                item['_classify_error'] = detail[:220]
+                recovered[pno] = item
+        all_items.extend(recovered[pno] for pno in sorted(recovered))
         if emit:
             emit({'type': 'progress', 'message': '快速分拣《%s》%d/%d页…' %
                   (pf.name, min(start + len(batch), len(indices)), len(indices)),
@@ -132,6 +173,77 @@ def classify_scanned_page(ai_call, pf, idx, image_b64, ocr_hint='', ctx='[快速
     return CM._ask_json(ai_call, 'vision' if image_b64 else 'text',
                         FAST_CLASSIFY_SYSTEM, user, FAST_CLASSIFY_TOKENS,
                         image_b64, ctx + '%s p%d ' % (pf.name, idx + 1))
+
+
+def _layout_signature(page):
+    """生成与业务名称无关的粗版式指纹，作为 AI 失败时的最后兜底。"""
+    meta = page.get('_layout_meta')
+    if meta:
+        width, height, lines, chars, images = meta
+        orientation = 'portrait' if height >= width else 'landscape'
+        return json.dumps((
+            orientation,
+            int(round(float(lines) / 40.0)),
+            int(round(float(images))),
+        ), ensure_ascii=False)
+    text = str(page.get('_layout_text') or '').strip()
+    if not text:
+        return ''
+    lines = [re.sub(r'\s+', ' ', line).strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ''
+    shape = (
+        min(40, int(round(len(text) / 240.0))),
+        min(80, int(round(len(lines) / 5.0))),
+        min(80, int(round(sum(1 for line in lines if len(line) >= 45) / 3.0))),
+        min(80, int(round(sum(1 for line in lines
+                            if len(re.findall(r'\d', line)) >= 2) / 3.0))),
+        min(80, int(round(sum(line.count('   ') for line in lines) / 10.0))),
+    )
+    return json.dumps(shape, ensure_ascii=False)
+
+
+def apply_layout_fallback(pages):
+    """AI 全部失败时按重复版式拆分，避免所有页静默落入一个“未知文档”。"""
+    labels = OrderedDict()
+    for page in sorted(pages, key=lambda p: (str(p.get('_filename', '')),
+                                             int(p.get('_page', 0)))):
+        if page.get('_blank'):
+            continue
+        dtype = _canonical(page.get('document_type'))
+        if dtype not in ('', '未知文档', '未知'):
+            continue
+        pf = page.get('_source_pf')
+        idx = page.get('_source_idx')
+        if pf is not None and idx is not None:
+            info = pf.pages[int(idx)]
+            page['_layout_text'] = info.text or info.hint or ''
+            if pf.__class__.__name__ == 'PdfFile':
+                try:
+                    cache = getattr(pf, '_split_layout_meta', None)
+                    if cache is None:
+                        import pdfplumber
+                        with pdfplumber.open(io.BytesIO(pf.data)) as pdf:
+                            cache = [(float(item.width), float(item.height),
+                                      len(item.lines), len(item.chars), len(item.images))
+                                     for item in pdf.pages]
+                        pf._split_layout_meta = cache
+                    if int(idx) < len(cache):
+                        page['_layout_meta'] = cache[int(idx)]
+                except Exception:
+                    pass
+        signature = _layout_signature(page)
+        if not signature:
+            continue
+        if signature not in labels:
+            labels[signature] = '未知文档·版式%02d' % (len(labels) + 1)
+        label = labels[signature]
+        page['document_type'] = label
+        page['reason'] = (str(page.get('reason') or '') + '；按重复版式兜底分组')[:120]
+        page['confidence'] = 'low'
+        page['_layout_fallback'] = True
+    return pages
 
 
 def apply_local_boundaries(pages):
@@ -264,6 +376,7 @@ def save_type_files(groups, pfs, job_id, root_dir):
         group['file_path'] = out_path
         group['page_count'] = len(group['pages'])
         group['logical_documents'] = len(group['documents'])
+        group['fallback_pages'] = sum(1 for p in group['pages'] if p.get('_layout_fallback'))
         group['source_files'] = sorted({p.get('_filename', '') for p in group['pages']})
         group['document_segments'] = [{
             'source_file': key[0], 'anchor_page': key[1],

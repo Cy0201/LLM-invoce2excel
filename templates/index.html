@@ -614,10 +614,13 @@ function renderSplitResult(res){
       (res.blank_pages?'（空白 '+res.blank_pages+'）':'')+'</span>'+
     '<span class="chip ok"><i class="fa-solid fa-layer-group"></i> '+groups.length+' 类文档</span>'+
     '<span class="chip"><i class="fa-solid fa-file-export"></i> '+groups.reduce((n,g)=>n+(g.page_count||0),0)+' 页已保存</span>'+
+    (res.fallback_pages?'<span class="chip warn"><i class="fa-solid fa-triangle-exclamation"></i> '+res.fallback_pages+' 页按版式兜底</span>':'')+
     (bad.length?'<span class="chip warn">'+bad.length+' 个文件无法解析</span>':'');
   const ib=$("#issues");
-  if(bad.length){ib.style.display="block";ib.innerHTML='<div class="t"><i class="fa-solid fa-triangle-exclamation"></i> 以下文件未进入分组</div><ul>'+
-    bad.map(x=>'<li>'+esc(x.filename)+'：'+esc(x.error||"")+'</li>').join("")+'</ul>';}
+  if(bad.length||res.classification_warning){ib.style.display="block";ib.innerHTML=
+    (res.classification_warning?'<div class="t"><i class="fa-solid fa-triangle-exclamation"></i> '+esc(res.classification_warning)+'</div>':'')+
+    (bad.length?'<div class="t"><i class="fa-solid fa-circle-xmark"></i> 以下文件未进入分组</div><ul>'+
+      bad.map(x=>'<li>'+esc(x.filename)+'：'+esc(x.error||"")+'</li>').join("")+'</ul>':'');}
   else ib.style.display="none";
   $("#rHead").innerHTML="<tr><th>文档类型</th><th>页数</th><th>逻辑文档</th><th>来源文件</th><th>操作</th></tr>";
   const tb=$("#rBody");tb.innerHTML="";
