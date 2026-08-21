@@ -15,12 +15,14 @@ selftest.py —— 全链路自测  v7
   想对照 Claude：把三者指向 https://api.anthropic.com 与 Claude 模型即可。
 """
 import io
+import os
 import re
 import sys
 import json
 import time
 import argparse
 import traceback
+import shutil
 
 PASS, FAIL = 0, []
 
@@ -432,41 +434,48 @@ def offline():
           image_result is not None and image_result.get('records') == 1,
           image_result)
 
-    print('\n[链路5] 混合异构文档 · 先拆分分类 → 各类型专有字段分别提取')
+    print('\n[链路5] 混合异构文档 · 快速分类切分保存 → 分组文件下载')
     APP._AI_CALL_OVERRIDE = MixedSimAI()
-    r = client.post('/api/mixed/analyze', data={
-        'files': [(io.BytesIO(tax_pdf), '合同发票混合.pdf')]})
-    d = r.get_json()
-    check('混合分析识别两类文档',
-          r.status_code == 200 and d.get('mode') == 'mixed' and
-          set(d.get('document_types', [])) == {'合同', '发票'} and
-          d.get('logical_documents') == 2, d)
-    check('混合分析按类型生成专有字段',
-          any(f.get('key') == 'contract_no' for s in d.get('schemas', [])
-              if s.get('document_type') == '合同' for f in s.get('fields', [])) and
-          any(f.get('key') == 'invoice_no' for s in d.get('schemas', [])
-              if s.get('document_type') == '发票' for f in s.get('fields', [])), d)
-    resp = client.post('/mixed/run', data={
+    resp = client.post('/mixed/split', data={
         'files': [(io.BytesIO(tax_pdf), '合同发票混合.pdf')]})
     evs = sse_events(resp.data)
-    mixed_schema = next((e for e in evs if e['type'] == 'schema'), None)
-    mixed_result = next((e for e in evs if e['type'] == 'result'), None)
-    check('混合一键提取完成',
-          mixed_schema is not None and mixed_result is not None and
-          mixed_result.get('mode') == 'mixed' and mixed_result.get('records') == 2,
-          {'schema': mixed_schema, 'result': mixed_result})
-    mixed_rows = mixed_result.get('rows', []) if mixed_result else []
-    contract_row = next((x for x in mixed_rows if x.get('_schema_type') == '合同'), {})
-    invoice_row = next((x for x in mixed_rows if x.get('_schema_type') == '发票'), {})
-    check('混合结果保留合同专有字段',
-          contract_row.get('contract_no') == 'C-001' and
-          'invoice_no' not in contract_row, contract_row)
-    check('混合结果保留发票专有字段并合并续页',
-          invoice_row.get('invoice_no') == 'I-001' and
-          invoice_row.get('invoice_total') == 200 and
-          invoice_row.get('_pages') == '2+3', invoice_row)
-    dl = client.get('/download?job=' + mixed_result['job']) if mixed_result else None
-    check('混合模式Excel下载', dl is not None and dl.status_code == 200 and dl.data[:2] == b'PK')
+    split_result = next((e for e in evs if e['type'] == 'result'), None)
+    groups = split_result.get('groups', []) if split_result else []
+    check('异构分拣端点完成且不进入字段提取',
+          resp.status_code == 200 and split_result is not None and
+          split_result.get('mode') == 'split' and
+          set(g.get('document_type') for g in groups) == {'合同', '发票'},
+          {'events': evs[-3:]})
+    contract_group = next((g for g in groups if g.get('document_type') == '合同'), {})
+    invoice_group = next((g for g in groups if g.get('document_type') == '发票'), {})
+    check('分类结果按类型保存且续页归组',
+          contract_group.get('page_count') == 1 and
+          invoice_group.get('page_count') == 2 and
+          invoice_group.get('logical_documents') == 1, groups)
+    job_id = split_result.get('job') if split_result else ''
+    one_pdf = client.get('/mixed/download?job=%s&type=%s' %
+                         (job_id, invoice_group.get('key', ''))) if job_id else None
+    check('单类型 PDF 下载', one_pdf is not None and one_pdf.status_code == 200 and
+          one_pdf.data[:4] == b'%PDF', one_pdf and one_pdf.status_code)
+    zip_dl = client.get('/mixed/download?job=' + job_id) if job_id else None
+    check('全部分类 ZIP 下载', zip_dl is not None and zip_dl.status_code == 200 and
+          zip_dl.data[:2] == b'PK', zip_dl and zip_dl.status_code)
+    legacy_dl = client.get('/download?job=' + job_id) if job_id else None
+    check('通用下载入口兼容分类 ZIP', legacy_dl is not None and legacy_dl.status_code == 200 and
+          legacy_dl.data[:2] == b'PK', legacy_dl and legacy_dl.status_code)
+    if job_id:
+        split_dir = APP.JOBS.get(job_id, {}).get('split_dir')
+        check('分类文件清单已落盘', bool(split_dir and os.path.isfile(os.path.join(split_dir, 'manifest.json'))), split_dir)
+        if split_dir and os.path.isdir(split_dir):
+            for response in (one_pdf, zip_dl, legacy_dl):
+                if response is not None:
+                    response.close()
+            try:
+                shutil.rmtree(split_dir)
+            except PermissionError:
+                # Flask 的 send_file 句柄在 Windows 上可能延迟释放；结果目录在
+                # results/ 下且已被 .gitignore 忽略，不影响测试和后续任务。
+                pass
 
     print('\n[边界] 破损文件与空字段')
     APP._AI_CALL_OVERRIDE = SimAI()
@@ -488,7 +497,7 @@ def offline():
     check('首页模板渲染', r.status_code == 200
            and '票据智能提取台' in r.get_data(as_text=True)
            and '求和校验' in r.get_data(as_text=True)
-           and '混合异构文档分别提取' in r.get_data(as_text=True))
+           and '异构文档快速分类拆分' in r.get_data(as_text=True))
 
     APP._AI_CALL_OVERRIDE = None
 

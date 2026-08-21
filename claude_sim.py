@@ -172,6 +172,25 @@ class MixedSimAI(object):
     def __call__(self, kind, system, user, max_tokens, image_b64=None):
         page_key = _page_key(user)
         self.calls.append((kind, page_key, int(max_tokens)))
+        if system.startswith('你是快速异构文档分拣器'):
+            try:
+                payload = json.loads(user)
+            except Exception:
+                payload = {'pages': []}
+            out = []
+            for item in payload.get('pages') or []:
+                page = int(item.get('page') or 1)
+                if page == 1:
+                    dtype, number, role, anchor = '合同', 'C-001', 'single', 1
+                elif page == 2:
+                    dtype, number, role, anchor = '发票', 'I-001', 'first', 2
+                else:
+                    dtype, number, role, anchor = '发票', None, 'continuation', 2
+                out.append({'page': page, 'document_type': dtype,
+                            'document_no': number, 'page_role': role,
+                            'anchor_page': anchor, 'confidence': 'high',
+                            'reason': '模拟器按标题和连续页信号分类'})
+            return json.dumps({'pages': out}, ensure_ascii=False), 'end_turn'
         if system.startswith('你是通用文档字段观察器'):
             page = page_key[1]
             if page == 1:

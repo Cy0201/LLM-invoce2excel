@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 app.py —— 通用票据/文档提取服务  v7
-流程：上传(未知类型) → 三态判定 → AI 推荐字段(或预设) → 单页合并提取(并发)
+流程：同类票据上传 → 三态判定 → AI 推荐字段(或预设) → 单页合并提取(并发)
       → 续页感知合并 → 本地算术校验 → 不一致自动复核一轮 → 结果/Excel
+      异构文档另走快速分拣：分类 → 边界校正 → 按类型保存 PDF/ZIP，之后分别上传提取。
 
 相对旧版的关键改动：
   · 全部文件的页摊平进同一对线程池（文本高并发/视觉限流），
@@ -37,6 +38,7 @@ from merge import normalize_fields, merge_pages, splice_results
 from excel_export import write_excel
 import common_mode as CM
 import mixed_mode as MM
+import split_mode as SM
 from common_export import write_common_excel, write_mixed_excel
 
 logging.basicConfig(level=logging.INFO,
@@ -54,6 +56,10 @@ VISION_WORKERS = int(os.environ.get('VISION_WORKERS', '3'))
 REPAIR_MAX = int(os.environ.get('REPAIR_MAX', '6'))       # 每次任务最多自动复核的记录数
 ANALYZE_IMG_SIDE = int(os.environ.get('ANALYZE_IMG_SIDE', '1600'))
 REPAIR_IMG_SIDE = int(os.environ.get('REPAIR_IMG_SIDE', '2400'))
+SPLIT_ROOT = os.environ.get(
+    'SPLIT_ROOT', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results', 'split'))
+FAST_SPLIT_TEXT_WORKERS = int(os.environ.get('FAST_SPLIT_TEXT_WORKERS', str(TEXT_WORKERS)))
+FAST_SPLIT_VISION_WORKERS = int(os.environ.get('FAST_SPLIT_VISION_WORKERS', str(VISION_WORKERS)))
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
@@ -307,6 +313,141 @@ def _scan_common_loaded(loaded):
     return pfs, bad
 
 
+def _split_page_item(pf, idx, item):
+    """把分拣模型的结果补成保存器需要的页级对象。"""
+    item = dict(item or {})
+    item.update({'_filename': pf.name, '_page': idx + 1, '_kind': pf.pages[idx].kind,
+                 '_source_pf': pf, '_source_idx': idx})
+    return item
+
+
+def _fast_split_loaded(loaded, cfg, emit):
+    """快速分拣主流程：扫描 → 批量分类 → 本地边界校正 → 按类型保存。
+
+    这里故意不做字段观察、字段建模或字段提取。异构文件先变成多个可下载的
+    同类 PDF，用户再把每个分组送入原有的精准/跨版式流程，避免不同业务字段
+    被强行压进一张结果表。
+    """
+    pfs, bad = _scan_common_loaded(loaded)
+    if not pfs:
+        raise ValueError('没有可解析的 PDF 或图片')
+    total_pages = sum(pf.page_count for pf in pfs)
+    blank_pages = sum(page.kind == 'blank' for pf in pfs for page in pf.pages)
+    emit({'type': 'start', 'mode': 'split', 'total_pages': total_pages,
+          'files': len(pfs), 'blank_pages': blank_pages, 'ocr': P.ocr_available()})
+    for name, error in bad or []:
+        emit({'type': 'page', 'mode': 'error', 'filename': name, 'page': 0,
+              'current': 0, 'total_pages': total_pages,
+              'error': '无法打开: %s' % str(error)[:180]})
+
+    ai = _make_ai_call(cfg)
+    pages, futures, pools = [], {}, []
+
+    # 电子 PDF：一份来源文件按 18 页左右批量请求，减少请求数；同一文件内仍按页保序。
+    native_files = [(pf, [i for i, page in enumerate(pf.pages) if page.kind == 'native'])
+                    for pf in pfs]
+    native_files = [(pf, indices) for pf, indices in native_files if indices]
+
+    def classify_native_file(pf, indices):
+        items = SM.classify_native_batches(
+            ai, pf, indices,
+            emit=lambda event: emit(dict(event, mode='split')),
+            ctx='[快速分拣文本 %s] ' % pf.name)
+        by_page = {int(item.get('page', 0)): item for item in items}
+        return [_split_page_item(pf, idx, by_page.get(idx + 1, SM._fallback_item(pf, idx)))
+                for idx in indices]
+
+    if native_files:
+        pool = ThreadPoolExecutor(max_workers=max(1, min(FAST_SPLIT_TEXT_WORKERS,
+                                                          len(native_files))))
+        pools.append(pool)
+        for pf, indices in native_files:
+            futures[pool.submit(classify_native_file, pf, indices)] = ('native', pf, indices)
+
+    # 扫描页：本地 OCR 有结果时只发文字；没有 OCR 才发单页图片，减少视觉请求。
+    scanned_tasks = [(pf, i) for pf in pfs for i, page in enumerate(pf.pages)
+                     if page.kind == 'scanned']
+
+    def classify_scanned(pf, idx):
+        page = pf.pages[idx]
+        image_b64, ocr_hint = None, ''
+        try:
+            image = pf.render(idx, target_side=ANALYZE_IMG_SIDE)
+            ocr_hint = P.ocr_layout(image) or page.hint
+            if not ocr_hint:
+                image_b64 = P.pil_to_b64(image, max_side=ANALYZE_IMG_SIDE, quality=82)
+            raw = SM.classify_scanned_page(
+                ai, pf, idx, image_b64=image_b64, ocr_hint=ocr_hint,
+                ctx='[快速分拣扫描 %s] ' % pf.name)
+            item = SM._normalize_items(raw, pf, [idx])[0]
+        except Exception as exc:
+            item = SM._fallback_item(pf, idx)
+            item['reason'] = '扫描页分拣失败：%s' % str(exc)[:90]
+            item['_error'] = '%s: %s' % (type(exc).__name__, str(exc)[:220])
+        return _split_page_item(pf, idx, item)
+
+    if scanned_tasks:
+        pool = ThreadPoolExecutor(max_workers=max(1, min(FAST_SPLIT_VISION_WORKERS,
+                                                          len(scanned_tasks))))
+        pools.append(pool)
+        for pf, idx in scanned_tasks:
+            futures[pool.submit(classify_scanned, pf, idx)] = ('scanned', pf, [idx])
+
+    # 空白页不调用 AI，但保留在页数统计中，不进入任何输出分组。
+    for pf in pfs:
+        for idx, page in enumerate(pf.pages):
+            if page.kind == 'blank':
+                pages.append({'_filename': pf.name, '_page': idx + 1, '_kind': 'blank',
+                              '_blank': True, '_source_pf': pf, '_source_idx': idx})
+
+    finished = 0
+    try:
+        for future in as_completed(futures):
+            kind, pf, _indices = futures[future]
+            result = future.result()
+            pages.extend(result if isinstance(result, list) else [result])
+            finished += len(result) if isinstance(result, list) else 1
+            emit({'type': 'progress', 'mode': 'split',
+                  'message': '快速分类 %d/%d 页…' % (finished, max(1, total_pages - blank_pages)),
+                  'pct': 42 + int(42 * finished / max(1, total_pages - blank_pages))})
+    finally:
+        for pool in pools:
+            pool.shutdown(wait=True)
+
+    pages = SM.apply_local_boundaries(pages)
+    groups = SM.type_groups(pages)
+    if not groups:
+        raise ValueError('上传内容全部为空白页，无法生成分组文件')
+    emit({'type': 'progress', 'mode': 'split', 'message': '正在保存分类 PDF…', 'pct': 88})
+    job_id = uuid.uuid4().hex[:12]
+    root_dir = os.path.join(SPLIT_ROOT, job_id)
+    try:
+        saved, metadata = SM.save_type_files(groups, pfs, job_id, root_dir)
+    finally:
+        for pf in pfs:
+            pf.close()
+
+    stored_groups = []
+    public_groups = []
+    for group in saved:
+        stored = {k: group.get(k) for k in (
+            'key', 'document_type', 'file_name', 'file_path', 'page_count',
+            'logical_documents', 'source_files', 'document_segments')}
+        stored_groups.append(stored)
+        public = {k: stored.get(k) for k in stored if k != 'file_path'}
+        public['download_url'] = '/mixed/download?job=%s&type=%s' % (
+            job_id, group.get('key', ''))
+        public_groups.append(public)
+    public_metadata = {'job': job_id, 'groups': public_groups}
+    _store_job(job_id, {'mode': 'split', 'groups': stored_groups,
+                        'metadata': public_metadata, 'split_dir': root_dir})
+    emit({'type': 'result', 'mode': 'split', 'job': job_id,
+          'total_pages': total_pages, 'blank_pages': blank_pages,
+          'files': len(pfs), 'groups': public_groups,
+          'bad_files': [{'filename': n, 'error': str(e)[:180]} for n, e in bad],
+          'download_url': '/download?job=%s' % job_id})
+
+
 def _discover_common_from_pfs(pfs, cfg, emit=None):
     refs = CM.representative_pages(pfs)
     if not refs:
@@ -412,7 +553,7 @@ def _mixed_schema_json(schemas):
 
 @app.route('/api/mixed/analyze', methods=['POST'])
 def api_mixed_analyze():
-    """混合模式只做分类、拆分和按类型字段方案预览，不提取结果。"""
+    """旧客户端兼容接口；新界面使用 /mixed/split，先保存分组文件再分别提取。"""
     files = request.files.getlist('files')
     if not files or files[0].filename == '':
         return jsonify({'error': '没有上传文件'}), 400
@@ -544,8 +685,52 @@ def _run_mixed_extraction(job_id, loaded, pfs, bad, pages, schemas,
           'rows': MM.rows(records, schemas)})
 
 
+@app.route('/mixed/split', methods=['POST'])
+def mixed_split():
+    """异构文档专用流程：只快速分类、切分并保存，不做字段提取。"""
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        return jsonify({'error': '没有上传文件'}), 400
+    names = _uniq_names([safe_name(f.filename) for f in files])
+    loaded = [(n, f.read()) for n, f in zip(names, files)]
+    cfg = _cfg_from(request)
+
+    def generate():
+        q = queue.Queue()
+
+        def worker():
+            pfs = []
+            try:
+                q.put(_sse({'type': 'progress', 'mode': 'split',
+                            'message': '扫描 PDF / 图片并准备快速分拣…', 'pct': 2}))
+                _fast_split_loaded(loaded, cfg, lambda o: q.put(_sse(o)))
+            except Exception as e:
+                logger.error('异构文档快速分拣失败：%s', traceback.format_exc())
+                q.put(_sse({'type': 'error', 'mode': 'split', 'message': str(e)[:400]}))
+                for pf in pfs:
+                    pf.close()
+            finally:
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
 @app.route('/mixed/run', methods=['POST'])
 def mixed_run():
+    """兼容旧前端入口；现在统一走“先分拣保存、后分别上传”流程。"""
+    return mixed_split()
+
+
+@app.route('/mixed/run-legacy', methods=['POST'])
+def mixed_run_legacy():
     """一键：全页识别 → 文档拆分 → 按类型总结字段 → 分类型提取。"""
     files = request.files.getlist('files')
     if not files or files[0].filename == '':
@@ -1026,6 +1211,30 @@ def _rows(records, fields):
 # ══════════════════════════════════════════════════════════════
 #  下载
 # ══════════════════════════════════════════════════════════════
+@app.route('/mixed/download')
+def mixed_download():
+    """下载某一类型 PDF；不指定 type 时下载包含全部分组的 ZIP。"""
+    job_id = request.args.get('job', '')
+    type_key = request.args.get('type', '')
+    with _JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if not job or job.get('mode') != 'split':
+        return jsonify({'error': '分类结果不存在或已过期，请重新分拣'}), 404
+    groups = job.get('groups') or []
+    if type_key:
+        group = next((g for g in groups if str(g.get('key')) == str(type_key)), None)
+        if not group:
+            return jsonify({'error': '找不到该文档类型'}), 404
+        path = group.get('file_path', '')
+        if not path or not os.path.isfile(path):
+            return jsonify({'error': '分组文件已被清理，请重新分拣'}), 404
+        return send_file(path, mimetype='application/pdf', as_attachment=True,
+                         download_name=group.get('file_name') or '分类文档.pdf')
+    data = SM.zip_groups(groups, job.get('metadata') or {'job': job_id, 'groups': []})
+    return send_file(io.BytesIO(data), mimetype='application/zip', as_attachment=True,
+                     download_name='异构文档分类结果_%s.zip' % job_id)
+
+
 @app.route('/download')
 def download():
     job_id = request.args.get('job', '')
@@ -1040,6 +1249,12 @@ def download():
         data = write_mixed_excel(job['records'], job.get('schemas', []),
                                  job.get('issues', []))
         filename = '混合文档分类提取结果.xlsx'
+    elif job.get('mode') == 'split':
+        data = SM.zip_groups(job.get('groups', []),
+                             job.get('metadata') or {'job': job_id, 'groups': []})
+        filename = '异构文档分类结果_%s.zip' % job_id
+        return send_file(io.BytesIO(data), mimetype='application/zip',
+                         as_attachment=True, download_name=filename)
     else:
         data = write_excel(job['records'], job['fields'], job['validations'])
         filename = '提取结果.xlsx'

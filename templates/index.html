@@ -83,6 +83,12 @@ select:focus,input:focus,textarea:focus{border-color:var(--yellow-2)}
   min-width:220px;flex:1 1 220px}
 .mixed-schema b{color:var(--ink)}
 .mixed-schema div{color:var(--sub);font-size:12px;line-height:1.65;margin-top:3px}
+#splitPreview{display:none;margin:10px 0 2px}
+.split-intro{color:var(--sub);font-size:12.5px;margin:0 0 10px}
+.split-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px}
+.split-card{border:1px solid var(--line);border-radius:11px;background:#FCFAF4;padding:10px 12px}
+.split-card b{font-size:13px}.split-card .meta{color:var(--sub);font-size:12px;margin:3px 0 8px}
+.split-card .mini{display:inline-flex;text-decoration:none;margin-right:5px}
 table.fields{width:100%;border-collapse:collapse;font-size:13px}
 table.fields th{font-size:11.5px;color:var(--sub);font-weight:600;text-align:left;
   padding:4px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -174,7 +180,7 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
 
 <main>
   <section class="card">
-    <div class="step-h"><b>提取模式</b></div>
+    <div class="step-h"><b>工作模式</b></div>
     <div class="mode-grid">
       <label class="mode-card active" data-mode="same">
         <input type="radio" name="mode" value="same" checked>
@@ -186,7 +192,7 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
       </label>
       <label class="mode-card" data-mode="mixed">
         <input type="radio" name="mode" value="mixed">
-        <div><b>混合异构文档分别提取</b><span>合同、发票、发货单混在一起时，先自动拆分分类，再分别保留各类型专有字段。</span></div>
+        <div><b>异构文档快速分类拆分</b><span>合同、发票、发货单混在一起时，先按类型切分并保存，下载后分别上传提取。</span></div>
       </label>
     </div>
   </section>
@@ -197,7 +203,7 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
       <span class="hint">支持多个 PDF 与图片 · 电子件 / 扫描件 / 混合多页均可</span></div>
     <div id="drop">
       <div class="big"><i class="fa-solid fa-cloud-arrow-up"></i> 拖入 PDF 或图片，或点击选择文件</div>
-      <div>同一单据跨页、多张单据合并成一个文件都没关系，系统会自动识别与拼接</div>
+      <div>同一单据跨页、多张单据合并成一个文件都没关系；异构模式会先分类切分并保存</div>
       <input type="file" id="fileInput" accept="application/pdf,image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif" multiple hidden>
     </div>
     <div id="flist"></div>
@@ -213,10 +219,12 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
 
   <!-- ② 字段 -->
   <section class="card">
-    <div class="step-h"><div class="badge-n">2</div><b>字段方案</b>
+    <div class="step-h"><div class="badge-n">2</div><b id="step2Title">字段方案</b>
       <span class="hint">可随意修改；表格字段在"提取说明"里写「列：key 中文名, …」</span></div>
     <div id="docType"><span class="dt"></span></div>
     <div id="mixedSchemaPreview"></div>
+    <div id="splitPreview"></div>
+    <div id="fieldEditor">
     <div style="overflow:auto">
     <table class="fields"><thead><tr>
       <th style="width:110px">key</th><th style="width:110px">名称</th>
@@ -231,19 +239,20 @@ table.subtbl td{padding:3px 8px;border:1px solid var(--line)}
       <button class="btn sec" id="btnAdd"><i class="fa-solid fa-plus"></i> 添加字段</button>
       <button class="btn sec" id="btnSavePreset"><i class="fa-solid fa-star"></i> 存为本地预设</button>
     </div>
+    </div>
     <div class="f-note" id="sameNote">合并键：跨页单据靠它拼回一条记录（如报关单编号）；即使续页没印编号，AI
       也会按"续页"语义自动并入上一条。取值 last 适合印在末页的合计。求和校验为本地算术核对，
       不一致会自动触发一轮 AI 复核。</div>
     <div class="f-note" id="commonNote" style="display:none">AI 根据同一类票据的业务语义归并字段和明细列，
       再结合全文顺序复核文档边界。字段名称、语言、位置和表格结构可以不同；结果保留原字段名、证据和置信度。</div>
-    <div class="f-note" id="mixedNote" style="display:none">AI 先识别每页所属类型并复核逻辑文档边界，再为合同、发票、发货单等类型分别生成字段方案。
-      该模式不是只取公共字段：每种文档的专有字段和明细都会保留。</div>
+    <div class="f-note" id="mixedNote" style="display:none">此模式只负责快速识别类型、切分逻辑文档并保存文件，不提取字段。
+      下载后请将每个类型单独上传：版式统一的票据选“固定格式精准提取”，同类但版式不同的票据选“同类票据跨版式提取”。</div>
   </section>
 
   <!-- ③ 提取 -->
   <section class="card">
-    <div class="step-h"><div class="badge-n">3</div><b>开始提取</b>
-      <span class="hint">电子件走高并发文本通道，扫描件走视觉通道（不支持视觉的网关自动降级 OCR）</span></div>
+    <div class="step-h"><div class="badge-n">3</div><b id="step3Title">开始提取</b>
+      <span class="hint" id="step3Hint">电子件走高并发文本通道，扫描件走视觉通道（不支持视觉的网关自动降级 OCR）</span></div>
     <button class="btn" id="btnRun" style="font-size:14px;padding:11px 26px"><i class="fa-solid fa-bolt"></i> 开始提取</button>
     <div id="energyWrap">
       <div id="energyBar"><div id="energyFill"></div></div>
@@ -293,19 +302,27 @@ document.querySelectorAll('.mode-card').forEach(card=>card.onclick=()=>{
   state.mode=card.dataset.mode;state.fields=[];state.typeSchemas=[];state.documentTypes=[];state.docCtx="";
   $("#presetSel").value="";$("#docType").style.display="none";
   $("#mixedSchemaPreview").style.display="none";$("#mixedSchemaPreview").innerHTML="";
+  $("#splitPreview").style.display="none";$("#splitPreview").innerHTML="";
   $("#pagesSum").textContent="";
+  $("#resultBox").style.display="none";$("#energyWrap").style.display="none";state.job=null;
   const same=state.mode==="same", common=state.mode==="common", mixed=state.mode==="mixed";
   document.querySelectorAll('.same-only').forEach(x=>x.style.display=same?'':'none');
+  $("#fieldEditor").style.display=mixed?'none':'';
+  $("#btnRun").style.display=mixed?'none':'';
+  $("#btnXlsx").style.display=mixed?'none':'';
+  $("#step2Title").textContent=mixed?'分类说明':'字段方案';
+  $("#step3Title").textContent=mixed?'分类结果':'开始提取';
+  $("#step3Hint").textContent=mixed?'分类完成后下载分组文件，再分别上传提取':'电子件走高并发文本通道，扫描件走视觉通道（不支持视觉的网关自动降级 OCR）';
   $("#sameNote").style.display=same?'block':'none';
   $("#commonNote").style.display=common?'block':'none';
   $("#mixedNote").style.display=mixed?'block':'none';
   $("#btnAnalyze").innerHTML=common?
     '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 总结同类字段':mixed?
-    '<i class="fa-solid fa-wand-magic-sparkles"></i> AI 分析类型与字段':
+    '<i class="fa-solid fa-folder-tree"></i> AI 快速分类并保存':
     '<i class="fa-solid fa-magnifying-glass"></i> AI 识别文档 · 推荐字段';
   $("#btnRun").innerHTML=common?
     '<i class="fa-solid fa-layer-group"></i> 一键统一提取':mixed?
-    '<i class="fa-solid fa-layer-group"></i> 一键拆分并分别提取':
+    '<i class="fa-solid fa-layer-group"></i> 分别上传后提取':
     '<i class="fa-solid fa-bolt"></i> 开始提取';
   $("#btnXlsx").innerHTML=common?
     '<i class="fa-solid fa-file-excel"></i> 下载 Excel（统一汇总/字段证据/异常）':mixed?
@@ -438,9 +455,42 @@ $("#btnAdd").onclick=()=>{collectFields();
   state.fields.push({key:"field_"+(state.fields.length+1),label:"新字段",type:"text",
     description:"",group_key:false,carry:"first",sum_check:null});renderFields();};
 
+/* ── 异构文档快速分拣（SSE）── */
+async function runSplit(){
+  if(state.running||!state.files.length)return;
+  saveSet();state.running=true;
+  const b=$("#btnAnalyze");b.disabled=true;
+  b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> 分类保存中...';
+  $("#energyWrap").style.display="block";$("#resultBox").style.display="none";
+  $("#pageLog").style.display="block";$("#pageLog").innerHTML="";
+  setBar(2);setStatus("准备快速分拣...");
+  try{
+    const fd=apiForm(new FormData());state.files.forEach(f=>fd.append("files",f));
+    const resp=await fetch("/mixed/split",{method:"POST",body:fd});
+    if(!resp.ok||!resp.body){const t=await resp.json().catch(()=>({}));
+      throw new Error(t.error||("HTTP "+resp.status));}
+    const rd=resp.body.getReader(),dec=new TextDecoder();let buf="",total=1;
+    const handle=ev=>{
+      if(ev.type==="start"){total=ev.total_pages||1;setStatus("共 "+ev.files+" 个文件 · "+total+" 页"+
+        (ev.blank_pages?"（空白 "+ev.blank_pages+" 页自动跳过）":"")+(ev.ocr?" · OCR辅助已启用":""));}
+      else if(ev.type==="page"){logPage(ev);}
+      else if(ev.type==="progress"){setBar(ev.pct||50);setStatus(ev.message||"");}
+      else if(ev.type==="error"){throw new Error(ev.message||"快速分拣失败");}
+      else if(ev.type==="result"){setBar(100);renderResult(ev);setStatus("分类完成：请下载分组文件后分别上传提取");}
+    };
+    while(true){const{done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});let idx;
+      while((idx=buf.indexOf("\n\n"))>=0){const chunk=buf.slice(0,idx).trim();buf=buf.slice(idx+2);
+        if(chunk.startsWith("data:"))handle(JSON.parse(chunk.slice(5)));}}
+  }catch(e){setStatus('<span class="badc"><i class="fa-solid fa-circle-xmark"></i> '+esc(String(e.message||e))+'</span>');}
+  finally{state.running=false;b.disabled=false;
+    b.innerHTML='<i class="fa-solid fa-folder-tree"></i> AI 快速分类并保存';}
+}
+
 /* ── AI 分析 ── */
 $("#btnAnalyze").onclick=async()=>{
   if(!state.files.length)return alert("请先上传至少一个 PDF 或图片");
+  if(state.mode==="mixed"){runSplit();return;}
   saveSet();const b=$("#btnAnalyze");b.disabled=true;b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> '+(state.mode==="same"?'识别中...':'AI 分析中...');
   $("#pagesSum").textContent="";
   try{
@@ -478,6 +528,7 @@ $("#btnAnalyze").onclick=async()=>{
 $("#btnRun").onclick=async()=>{
   if(state.running)return;
   if(!state.files.length)return alert("请先上传 PDF 或图片");
+  if(state.mode==="mixed")return alert("请先完成快速分类并下载分组文件，再分别上传提取");
   collectFields();
   if(state.mode==="same"&&!state.fields.length)return alert("请先选择预设或用 AI 识别生成字段");
   saveSet();state.running=true;
@@ -552,7 +603,37 @@ const EV_PILL={native_text:["电子解析","native"],vision:["AI视觉","vision"
 function evPill(ev){if(!ev)return"";
   return String(ev).split("+").filter(Boolean).map(p=>{
     const[t,c]=EV_PILL[p]||[p,"native"];return`<span class="pill ${c}">${t}</span>`;}).join(" ");}
+function renderSplitResult(res){
+  state.job=res.job;state.documentTypes=(res.groups||[]).map(g=>g.document_type).filter(Boolean);
+  $("#resultBox").style.display="block";$("#fieldEditor").style.display="none";
+  $("#docType").style.display="block";
+  $("#docType .dt").textContent="已分类 "+state.documentTypes.length+" 类，共 "+(res.total_pages||0)+" 页；请下载后分别上传提取";
+  const groups=res.groups||[],bad=res.bad_files||[];
+  $("#chips").innerHTML=
+    '<span class="chip"><i class="fa-solid fa-file-lines"></i> '+(res.total_pages||0)+' 页'+
+      (res.blank_pages?'（空白 '+res.blank_pages+'）':'')+'</span>'+
+    '<span class="chip ok"><i class="fa-solid fa-layer-group"></i> '+groups.length+' 类文档</span>'+
+    '<span class="chip"><i class="fa-solid fa-file-export"></i> '+groups.reduce((n,g)=>n+(g.page_count||0),0)+' 页已保存</span>'+
+    (bad.length?'<span class="chip warn">'+bad.length+' 个文件无法解析</span>':'');
+  const ib=$("#issues");
+  if(bad.length){ib.style.display="block";ib.innerHTML='<div class="t"><i class="fa-solid fa-triangle-exclamation"></i> 以下文件未进入分组</div><ul>'+
+    bad.map(x=>'<li>'+esc(x.filename)+'：'+esc(x.error||"")+'</li>').join("")+'</ul>';}
+  else ib.style.display="none";
+  $("#rHead").innerHTML="<tr><th>文档类型</th><th>页数</th><th>逻辑文档</th><th>来源文件</th><th>操作</th></tr>";
+  const tb=$("#rBody");tb.innerHTML="";
+  for(const g of groups){const tr=document.createElement("tr");
+    const href=g.download_url||("/mixed/download?job="+encodeURIComponent(res.job)+"&type="+encodeURIComponent(g.key||""));
+    tr.innerHTML='<td><b>'+esc(g.document_type||"未知文档")+'</b></td>'+
+      '<td>'+esc(g.page_count||0)+'</td><td>'+esc(g.logical_documents||0)+'</td>'+
+      '<td style="white-space:normal">'+esc((g.source_files||[]).join("、"))+'</td>'+
+      '<td><a class="mini" href="'+esc(href)+'"><i class="fa-solid fa-download"></i> 下载 PDF</a></td>';
+    tb.appendChild(tr);
+  }
+  $("#btnXlsx").style.display="inline-flex";
+  $("#btnXlsx").innerHTML='<i class="fa-solid fa-file-zipper"></i> 下载全部分类 ZIP';
+}
 function renderResult(res){
+  if(res.mode==="split"){renderSplitResult(res);return;}
   if(res.mode==="common"){renderCommonResult(res);return;}
   if(res.mode==="mixed"){renderMixedResult(res);return;}
   state.job=res.job;
@@ -682,7 +763,8 @@ function renderCommonResult(res){
       (ambiguous||boundaryLow?'<span class="badc">待确认</span>':'<span class="okc">完成</span>')}</td>`;
     tr.innerHTML=tds;tb.appendChild(tr);}
 }
-$("#btnXlsx").onclick=()=>{if(state.job)location.href="/download?job="+state.job;};
+$("#btnXlsx").onclick=()=>{if(state.job)location.href=state.mode==="mixed"?
+  "/mixed/download?job="+encodeURIComponent(state.job):"/download?job="+encodeURIComponent(state.job);};
 
 /* ── 工具 ── */
 function esc(s){return String(s??"").replace(/[&<>"']/g,
