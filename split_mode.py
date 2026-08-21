@@ -114,6 +114,13 @@ def _returned_page_items(raw):
     return out
 
 
+def _is_network_failure(detail):
+    text = str(detail or '').lower()
+    return any(token in text for token in (
+        'connecterror', 'connection', 'timeout', 'winerror',
+        'server disconnected', 'transport', 'network'))
+
+
 def classify_native_batches(ai_call, pf, indices, emit=None, ctx='[快速分拣] '):
     """电子 PDF 先按小批量请求；批量失败或漏页时自动降为单页重试。"""
     all_items = []
@@ -135,6 +142,12 @@ def classify_native_batches(ai_call, pf, indices, emit=None, ctx='[快速分拣]
             if pno in returned:
                 recovered[pno] = _normalize_items(
                     {'pages': [returned[pno]]}, pf, [idx])[0]
+                continue
+            if batch_error and _is_network_failure(batch_error):
+                item = _fallback_item(pf, idx)
+                item['reason'] = 'AI网关连接失败，改按版式兜底：%s' % batch_error[:120]
+                item['_classify_error'] = batch_error[:220]
+                recovered[pno] = item
                 continue
             # 批量请求可能因为上下文过长、网关截断或 JSON 不完整而漏页。
             # 只重试缺失页，正常批次仍保持低请求数。
