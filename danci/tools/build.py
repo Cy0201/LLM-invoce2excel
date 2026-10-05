@@ -57,7 +57,7 @@ FRAMING = {
     'ur1': {'crop': (0, 0, 1, 1), 'focus': (.44, .47, .34, .27), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
     'ur2': {'crop': (0, 0, 1, 1), 'focus': (.66, .5, .36, .32), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
     'lr1': {'crop': (0, 0, 1, 1), 'focus': (.62, .36, .34, .36), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
-    'lr2': {'crop': (0, 0, 1, 1), 'focus': (.48, .5, .36, .3), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
+    'lr2': {'skip': True},  # 晚霞心动（礼物）不放线稿
     'x1': {'crop': (0, 0, 1, 1), 'focus': (.52, .46, .36, .4), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
     'x2': {'crop': (.12, 0, 1, 1), 'focus': (.42, .4, .3, .4), 'box': (.56, 0, 1, 1), 'align': 'right', 'tone': 'dark'},
 }
@@ -153,6 +153,12 @@ def process_lineart(sheet, grid, order):
         pad = 7  # 避开边框残留
         cell = im.crop((x0 + pad, y0 + pad, x1 - pad, y1 - pad))
         land = slots.get(vid, {}).get('land', False)
+        if FRAMING.get(vid, {}).get('skip'):
+            old = os.path.join(out_dir, vid + '.webp')
+            if os.path.exists(old):
+                os.remove(old)
+            log('线稿', vid, '不使用')
+            continue
         fr = FRAMING.get(vid, {'crop': (0, 0, 1, 1), 'focus': (.5, .5, .5, .5), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'})
         alpha = stylize_panel(cell, fr, LANDSCAPE if land else PORTRAIT)
         rgba = Image.new('RGB', alpha.size, INK[fr['tone']])
