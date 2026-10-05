@@ -385,9 +385,9 @@ img{max-width:100%;display:block}
 .holo-card .cf-ov.lt{text-shadow:0 1px 3px rgba(30,10,50,.35)}
 .holo-card .cf-ov.lt .cf-w{text-shadow:0 2px 10px rgba(30,10,50,.35)}
 .holo-card.v-x1 .cf-w,.holo-card.v-x2 .cf-w,.holo-card.v-ur2 .cf-w{text-shadow:none}
-/* 线稿层：在底图之上、镭射之下；越往下越淡，给例句让出位置 */
-.holo-card .cf-art{-webkit-mask-image:linear-gradient(180deg,#000 0%,#000 46%,rgba(0,0,0,.35) 72%,rgba(0,0,0,.12) 100%);mask-image:linear-gradient(180deg,#000 0%,#000 46%,rgba(0,0,0,.35) 72%,rgba(0,0,0,.12) 100%)}
-.holo-card.is-land .cf-art{-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,.08) 0%,rgba(0,0,0,.25) 40%,#000 62%,#000 100%);mask-image:linear-gradient(90deg,rgba(0,0,0,.08) 0%,rgba(0,0,0,.25) 40%,#000 62%,#000 100%)}
+/* 线稿层：在镭射之上、文字之下，6 张统一质感；越往下越淡，给例句让出位置 */
+.holo-card .cf-ov .cf-art{position:absolute;left:0;top:0;right:0;bottom:0;background:center top/cover no-repeat;opacity:.62;-webkit-mask-image:linear-gradient(180deg,#000 0%,#000 50%,rgba(0,0,0,.4) 74%,rgba(0,0,0,0) 100%);mask-image:linear-gradient(180deg,#000 0%,#000 50%,rgba(0,0,0,.4) 74%,rgba(0,0,0,0) 100%)}
+.holo-card.is-land .cf-ov .cf-art{background-position:center;-webkit-mask-image:linear-gradient(90deg,rgba(0,0,0,0) 42%,#000 64%,#000 100%);mask-image:linear-gradient(90deg,rgba(0,0,0,0) 42%,#000 64%,#000 100%)}
 /* Chrome 61：没有 aspect-ratio 时让底图撑开卡片高度 */
 @supports not (aspect-ratio: 1){
   .holo-card__rotator img.holo-card__image{height:auto}

@@ -36,16 +36,12 @@
     if (!top) face.innerHTML = '<div class="cf-w">' + esc(w.w) + '</div>';
     var ov = document.createElement('div');
     ov.className = 'cf-ov' + (v.lt ? ' lt' : '') + (v.gold ? ' gold' : '') + (land ? ' land' : '') + (v.frame ? ' fr' + v.frame : '');
-    ov.innerHTML = overlayHTML(v, w, top);
-    var layers;
-    if (art) {
-      layers = [{ image: art, className: 'cf-art cf-art-' + vid, opacity: v.artOp || (v.lt ? .5 : .55), parallax: 6, size: 'cover', position: land ? 'right center' : 'center top' }];
-    }
+    ov.innerHTML = (art ? '<div class="cf-art"></div>' : '') + overlayHTML(v, w, top);
     var pal = v.pal || (v.eff === 'holo' || v.eff === 'reverse' || v.eff === 'radiant' ? C.PASTEL : undefined);
     var card = HoloKit.createHoloCard({
       image: 'img/art/' + vid + '.webp', effect: v.eff, textureSeed: 7,
       aspectRatio: land ? 386 / 250 : 250 / 386, gyroscope: false,
-      interactive: !!opt.interactive, content: face, overlay: ov, layers: layers,
+      interactive: !!opt.interactive, content: face, overlay: ov,
       visual: v.vis || {}, palette: pal, glow: opt.glow,
       // 可交互的卡：自动缓慢扫光，手指一碰就跟手；静态展示的卡用固定光位（.lit）
       showcase: opt.interactive && !REDUCE ? { delay: 400, loop: true, speed: .03, intensity: 14 } : false
@@ -55,7 +51,6 @@
     if (land) el.classList.add('is-land');
     if (art) {
       el.classList.add('has-art');
-      // 直接写在元素上：CSS 变量里的 url() 会按样式表目录解析，路径会错
       var layer = el.querySelector('.cf-art');
       if (layer) layer.style.backgroundImage = 'url("' + art + '")';
     }

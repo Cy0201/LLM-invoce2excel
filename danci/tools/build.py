@@ -46,16 +46,20 @@ def catalog_slots():
     return info
 
 
-# 每格的取景：crop 为格子内的相对范围 (x0, y0, x1, y1)；
-# box 为放进卡面的相对区域 (x0, y0, x1, y1)，按比例缩放后在 box 内靠 align 对齐。
-# 竖版卡把画面放在上半部分（下方是例句区，卡面会渐隐）；横版卡人物放右侧，左边留给单词和例句。
+# 线稿统一风格：每格只取一个焦点区域，焦点外的线条柔和消失；线宽统一重描；只用两种墨色。
+# crop  —— 格子内取景范围 (x0, y0, x1, y1)，相对格子
+# focus —— 焦点椭圆 (cx, cy, rx, ry)，相对格子；椭圆内保留，向外渐隐
+# box   —— 放进卡面的区域 (x0, y0, x1, y1)，相对卡面；align 为对齐方式
+# tone  —— dark：浅色卡用深墨；light：深色卡用浅墨
+INK = {'dark': '#3C3159', 'light': '#FFF4E2'}
+LINE_W = 2.2  # 统一线宽（卡面 600px 宽时）
 FRAMING = {
-    'ur1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
-    'ur2': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
-    'lr1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
-    'lr2': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
-    'x1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
-    'x2': {'crop': (.14, 0, 1, 1), 'box': (.56, 0, 1, 1), 'align': 'right'},
+    'ur1': {'crop': (0, 0, 1, 1), 'focus': (.44, .47, .34, .27), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
+    'ur2': {'crop': (0, 0, 1, 1), 'focus': (.66, .5, .36, .32), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
+    'lr1': {'crop': (0, 0, 1, 1), 'focus': (.62, .36, .34, .36), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
+    'lr2': {'crop': (0, 0, 1, 1), 'focus': (.48, .5, .36, .3), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
+    'x1': {'crop': (0, 0, 1, 1), 'focus': (.52, .46, .36, .4), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
+    'x2': {'crop': (.12, 0, 1, 1), 'focus': (.42, .4, .3, .4), 'box': (.56, 0, 1, 1), 'align': 'right', 'tone': 'dark'},
 }
 
 
@@ -95,8 +99,46 @@ def detect_panels(gray, cols, rows):
     return [(int(c * cw), int(r * ch), int((c + 1) * cw), int((r + 1) * ch)) for r in range(rows) for c in range(cols)]
 
 
+def stylize_panel(cell, fr, size):
+    """把一格线稿变成统一风格的透明线稿：焦点渐隐 + 骨架化后统一线宽重描"""
+    import numpy as np
+    from PIL import Image, ImageFilter, ImageOps
+    from skimage.morphology import disk, dilation, remove_small_objects, skeletonize
+    tw, th = size
+    cw0, ch0 = cell.size
+    c = fr['crop']
+    crop_px = (c[0] * cw0, c[1] * ch0, c[2] * cw0, c[3] * ch0)
+    cell = cell.crop(tuple(int(v) for v in crop_px))
+    b = fr['box']
+    bw, bh = (b[2] - b[0]) * tw, (b[3] - b[1]) * th
+    scale = min(bw / cell.width, bh / cell.height)
+    S = 2  # 在 2 倍分辨率上处理，最后缩小得到抗锯齿
+    w2, h2 = max(1, int(cell.width * scale * S)), max(1, int(cell.height * scale * S))
+    g = ImageOps.autocontrast(cell, cutoff=.5).resize((w2, h2), Image.LANCZOS)
+    a = np.asarray(g, dtype=np.float32)
+    ink = a < 150
+    ink = remove_small_objects(ink, max_size=int(40 * S * S * scale * scale), connectivity=2)  # 去掉碎点、残影
+    sk = skeletonize(ink)
+    sk = remove_small_objects(sk, max_size=int(14 * S * scale), connectivity=2)  # 去掉零碎短线
+    lines = dilation(sk, disk(max(1, round(LINE_W * S / 2)))).astype(np.float32)
+    # 焦点椭圆：格子坐标 → 当前图坐标
+    fx, fy, rx, ry = fr['focus']
+    cx = (fx * cw0 - crop_px[0]) * scale * S
+    cy = (fy * ch0 - crop_px[1]) * scale * S
+    yy, xx = np.mgrid[0:h2, 0:w2]
+    d = np.sqrt(((xx - cx) / (rx * cw0 * scale * S)) ** 2 + ((yy - cy) / (ry * ch0 * scale * S)) ** 2)
+    t = np.clip((d - .55) / .45, 0, 1)
+    weight = 1 - t * t * (3 - 2 * t)  # smoothstep
+    alpha = Image.fromarray((lines * weight * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.6 * S / 2))
+    alpha = alpha.resize((max(1, w2 // S), max(1, h2 // S)), Image.LANCZOS)
+    ox = b[0] * tw + ((bw - alpha.width) if fr['align'] == 'right' else (bw - alpha.width) / 2)
+    canvas = Image.new('L', (tw, th), 0)
+    canvas.paste(alpha, (int(ox), int(b[1] * th)))
+    return canvas
+
+
 def process_lineart(sheet, grid, order):
-    from PIL import Image, ImageOps
+    from PIL import Image
     cols, rows = [int(x) for x in grid.lower().split('x')]
     slots = catalog_slots()
     im = Image.open(sheet).convert('L')
@@ -110,27 +152,13 @@ def process_lineart(sheet, grid, order):
         x0, y0, x1, y1 = panels[idx]
         pad = 7  # 避开边框残留
         cell = im.crop((x0 + pad, y0 + pad, x1 - pad, y1 - pad))
-        info = slots.get(vid, {'ink': '#3B3570', 'land': False})
-        fr = FRAMING.get(vid, {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, 1), 'align': 'top'})
-        cw_, ch_ = cell.size
-        c = fr['crop']
-        cell = cell.crop((int(c[0] * cw_), int(c[1] * ch_), int(c[2] * cw_), int(c[3] * ch_)))
-        # 线条 → 透明度：只保留较深的线芯，让线更细更干净；浅灰杂点、AI 出图的淡色残影都去掉
-        gray = ImageOps.autocontrast(cell, cutoff=.5)
-        alpha = gray.point(lambda g: 0 if g > 200 else min(255, int(((200 - g) / 150) ** .85 * 255)))
-        tw, th = LANDSCAPE if info['land'] else PORTRAIT
-        b = fr['box']
-        bw, bh = (b[2] - b[0]) * tw, (b[3] - b[1]) * th
-        scale = min(bw / alpha.width, bh / alpha.height)
-        a = alpha.resize((max(1, int(alpha.width * scale)), max(1, int(alpha.height * scale))), Image.LANCZOS)
-        ox = b[0] * tw + ((bw - a.width) if fr['align'] == 'right' else (bw - a.width) / 2)
-        oy = b[1] * th
-        canvas = Image.new('L', (tw, th), 0)
-        canvas.paste(a, (int(ox), int(oy)))
-        rgba = Image.new('RGB', (tw, th), info['ink'])
-        rgba.putalpha(canvas)
+        land = slots.get(vid, {}).get('land', False)
+        fr = FRAMING.get(vid, {'crop': (0, 0, 1, 1), 'focus': (.5, .5, .5, .5), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'})
+        alpha = stylize_panel(cell, fr, LANDSCAPE if land else PORTRAIT)
+        rgba = Image.new('RGB', alpha.size, INK[fr['tone']])
+        rgba.putalpha(alpha)
         path = os.path.join(out_dir, vid + '.webp')
-        rgba.save(path, 'WEBP', quality=88, method=6)
+        rgba.save(path, 'WEBP', quality=90, method=6)
         mapping[vid] = 'lineart/' + vid + '.webp'
         log('线稿', vid, '→', os.path.relpath(path, ROOT), os.path.getsize(path), 'bytes')
     with open(os.path.join(SRC, 'js', 'lineart.js'), 'w', encoding='utf-8') as f:

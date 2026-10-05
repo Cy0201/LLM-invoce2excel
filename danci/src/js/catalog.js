@@ -26,11 +26,11 @@
       { id: 'ssr2', en: 'Opale', cn: '人鱼眼泪', eff: 'oilslick', art: ['#8FB8F0', '#C49AF0', '#8FE0E0', '#F0A8D0'], vis: { brightness: .72 }, charm: 'c_pearl', frame: 1 },
       { id: 'ssr3', en: 'Mosaïque', cn: '糖霜琉璃', eff: 'mosaic', art: ['#F2A9C8', '#C9A8F2', '#A8D4F2', '#F7D6A8'], vis: { brightness: .72 }, charm: 'c_bow', frame: 1 }] },
     { t: 'UR', cn: '璀璨', rate: 3, dust: 20, v: [
-      { id: 'ur1', en: 'Prisme', cn: '棱镜之吻', eff: 'prism', art: ['#C8B3F7', '#F7AECB', '#9FD0F4', '#F7DCA6'], vis: { brightness: .6 }, charm: 'c_star', frame: 2, slot: 0, ink: '#3E2F7A', artOp: .7 },
+      { id: 'ur1', en: 'Prisme', cn: '棱镜之吻', eff: 'prism', art: ['#C8B3F7', '#F7AECB', '#9FD0F4', '#F7DCA6'], vis: { brightness: .6 }, charm: 'c_star', frame: 2, slot: 0, ink: '#3E2F7A' },
       { id: 'ur2', en: 'Or Rosé', cn: '玫瑰金誓约', eff: 'radiant', art: ['#E9B7B9', '#C98A9A', '#F6D5C4', '#B87C93'], vis: { brightness: .62, glareOpacity: .6 }, pal: ROSEGOLD, top: 1, charm: 'c_crown', frame: 2, slot: 1, ink: '#6E2F45' }] },
     { t: 'LR', cn: '传说', rate: 0.8, dust: 40, v: [
       { id: 'lr1', en: 'Aurore', cn: '极光情书', eff: 'aurora', art: ['#2E2A7C', '#1E8FA6', '#7E4FC6', '#C96AA8'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, charm: 'c_moon', frame: 2, slot: 2, ink: '#E8F4FF' },
-      { id: 'lr2', en: 'Crépuscule', cn: '晚霞心动', eff: 'sunburst', art: ['#F08FA8', '#9B7FE6', '#F6B98A', '#5E5BC9'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, charm: 'c_heart', frame: 2, slot: 3, ink: '#7A2E55', artOp: .62 }] },
+      { id: 'lr2', en: 'Crépuscule', cn: '晚霞心动', eff: 'sunburst', art: ['#F08FA8', '#9B7FE6', '#F6B98A', '#5E5BC9'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, charm: 'c_heart', frame: 2, slot: 3, ink: '#7A2E55' }] },
     { t: 'SECRET', cn: '隐藏款', rate: 0.2, dust: 80, v: [
       { id: 'x1', en: 'Minuit', cn: '午夜星河', eff: 'cosmos', art: ['#100D24', '#36246A', '#14305E', '#5E2160'], lt: 1, gold: 1, top: 1, charm: 'c_star', frame: 3, slot: 4, ink: '#F4DDA8' },
       { id: 'x2', en: 'Clair de Lune', cn: '月光恋人', eff: 'holo', art: ['#D5D2F4', '#F1E1F0', '#B9C6EE', '#8E8CCB'], vis: { brightness: .55, saturate: .6 }, pal: MOON, land: 1, charm: 'c_moon', frame: 3, slot: 5, ink: '#3B3570' }] }
