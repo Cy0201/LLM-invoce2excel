@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=540,initial-scale=1" />
+<title>单词手账 宣传片</title>
+<link rel="stylesheet" href="fs/300.css" />
+<link rel="stylesheet" href="fs/600.css" />
+<link rel="stylesheet" href="css/holo-cards.css" />
+<link rel="stylesheet" href="css/app.css" />
+<link rel="stylesheet" href="promo.css" />
+</head>
+<body>
+<div id="stage">
+  <div id="world" class="L">
+    <div id="bgD" class="L bg" style="background-image:url(img/bg/home.webp)"></div>
+    <div id="bgN" class="L bg" style="background-image:url(img/bg/reveal.webp)"></div>
+    <div id="bgG" class="L bg" style="background-image:url(img/bg/gallery.webp)"></div>
+    <canvas id="fx" width="1080" height="1920"></canvas>
+
+    <!-- A 开场：词流 -->
+    <div id="sA" class="sc">
+      <div id="aKick">高考核心 688 词</div>
+      <div id="aLine"></div>
+      <div id="aWord"></div>
+      <div id="aIpa"></div>
+      <div id="aNo"></div>
+    </div>
+
+    <!-- B 答题得券 -->
+    <div id="sB" class="sc">
+      <div id="bPill"><img id="bTk" src="img/icon3d/ticket.webp" alt="" /><span>抽卡券</span><b id="bCnt">0</b></div>
+      <div id="bPanel"><div id="bLab"></div><div id="bWord"></div><div id="bIpa"></div></div>
+      <div id="bOpts"></div>
+      <div id="bCap">答对一题，得一张抽卡券</div>
+      <div id="bFly"></div>
+    </div>
+
+    <!-- C 揭晓 -->
+    <div id="sC" class="sc">
+      <div id="cRays"></div>
+      <div id="cGlow"></div>
+      <div id="cRing"></div>
+      <div id="cTier">LR · 传说</div>
+      <div id="cEn">Aurore</div>
+      <div id="cCn">极光情书</div>
+      <div id="cFlip"><div id="cFront"></div><div id="cBack"><i class="bk-star"></i><span>单词手账</span></div></div>
+      <div id="cProb">传说 0.8% × 秘封「极光新月」2.5%</div>
+    </div>
+
+    <!-- D 七个等级 -->
+    <div id="sD" class="sc">
+      <div id="dGlow"></div>
+      <div id="dBig"></div>
+      <div id="dFlow"></div>
+      <div id="dCn"></div>
+      <div id="dRate"></div>
+    </div>
+
+    <!-- E 蜡封 -->
+    <div id="sE" class="sc">
+      <div id="eCap">每张卡，再抽一枚蜡封</div>
+      <div id="eT"><b></b><span></span></div>
+      <div id="eSeals"></div>
+    </div>
+
+    <!-- F 收尾 -->
+    <div id="sF" class="sc">
+      <div id="fTitle">单词手账</div>
+      <div id="fSub">背单词 · 抽镭射卡</div>
+      <div id="fCards"></div>
+      <div id="fTease">隐藏款 · 0.2%</div>
+      <div id="fFoot">高考核心 688 词</div>
+    </div>
+
+    <div id="bigSeal"></div>
+    <canvas id="fx2" width="1080" height="1920"></canvas>
+  </div>
+  <div id="wipe"></div>
+  <div id="vig" class="L"></div>
+  <div id="flash" class="L"></div>
+  <div id="fade" class="L"></div>
+</div>
+<script src="js/data.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/lineart.js"></script>
+<script src="js/holokit.js"></script>
+<script src="js/cards.js"></script>
+<script src="promo.js"></script>
+</body>
+</html>

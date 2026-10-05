@@ -47,6 +47,24 @@ node tools/e2e.js                  # 可选：模拟容器把主要流程点一�
 - 线稿：LR「极光情书」、SECRET「午夜星河」「月光恋人」三款使用。源图 `lineart-src/sheet.jpg`，处理参数在 `tools/build.py` 的 `FRAMING`。重新处理：`python3 tools/build.py --lineart lineart-src/sheet.jpg`
 - 蜡封：源图 `seals-src/*.jpg`，`python3 tools/seals.py` 抠图输出到 `src/img/seal/`。
 
+## 宣传片
+
+`promo/单词手账-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音用 app 里的真人录音。隐藏款只露出光缝里的一窄条。
+
+```bash
+python3 tools/build.py                                   # 先生成 dist/
+node promo/capture.js /tmp/frames 30 0 20 4              # 逐帧截图
+python3 promo/music.py /tmp/music.wav                    # 配乐
+ffmpeg -framerate 30 -i /tmp/frames/%04d.jpg -i /tmp/music.wav -c:v libx264 -crf 17 -pix_fmt yuv420p \
+  -c:a aac -b:a 192k -af loudnorm=I=-14:TP=-1.5 -movflags +faststart -shortest promo/单词手账-宣传片.mp4
+```
+
+## 声音
+
+- 发音：688 词真人录音（`audio-clips.js`）。音效：`tools/sfx.py` 合成，生成 `sfx-clips.js`。
+- 播放优先走 Web Audio，起不来时退回 `<audio>`；iOS 每次手势都会重试解锁，并设置 `audioSession = playback`，静音键打开时也能出声（iOS 17+）。
+- `node tools/audio_test.js`：在普通、模拟 iOS、无 Web Audio 三种环境下检查每一步都真正出声。
+
 ## 目录
 
 - `src/`：源码
