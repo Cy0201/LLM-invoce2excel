@@ -241,20 +241,99 @@
   function collectedVariants() { const s = {}; Object.keys(S.cards).forEach(k => ownVids(k).forEach(id => { s[id] = 1; })); return Object.keys(s).length; }
   const DUST_PER_TICKET = 20;
 
-  /* ================= 发音（录音 → Web Audio；失败时系统朗读） ================= */
+  /* ================= 声音：发音录音 + 音效 =================
+   * Web Audio 优先（低延迟、可叠加）；上下文起不来（容器限制、没解锁）时退回 <audio> 元素；
+   * 没有录音的词才用系统朗读。
+   * iOS：只有 touchend / click 里的 resume() 才算用户手势，所以每次手势都重试，直到真正跑起来；
+   * audioSession = playback 让静音键不再静掉网页声音（iOS 17+）。 */
   const TTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
+  const SILENT = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NwwAAAAAAAAAAAAEluZm8AAAAPAAAABgAAAykAWlpaWlpaWlpaWlpaWlpaWnt7e3t7e3t7e3t7e3t7e3t7nJycnJycnJycnJycnJycnL29vb29vb29vb29vb29vb293t7e3t7e3t7e3t7e3t7e3t7/////////////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQEUQAAAAAAAAMpso/G6AAAAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NCxKMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NAxKQAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80LEowAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
   function clips() { return window.AUDIO_INLINE || null; }
+  function sfxClips() { return window.SFX_INLINE || null; }
   function bytesOf(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
-  const bufCache = {};
-  let AC = null, curSrc = null, token = 0, unlocked = false;
-  function getAC() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } return AC; }
-  function unlockAudio() {
-    if (unlocked) return; unlocked = true;
-    const ac = getAC(); if (!ac) return;
+  const bufCache = {}, badDecode = {};
+  let AC = null, voiceSrc = null, token = 0;
+  function getAC() {
+    if (!AC) { try { const K = window.AudioContext || window.webkitAudioContext; if (K) AC = new K(); } catch (e) { AC = null; } }
+    return AC;
+  }
+  const acRunning = () => !!(AC && AC.state === 'running');
+  function wakeAC() {
+    const ac = getAC(); if (!ac || ac.state === 'running') return;
+    try { const p = ac.resume(); if (p && p.catch) p.catch(() => { }); } catch (e) { }
     try { const b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0); } catch (e) { }
   }
-  ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
-  function stopAll() { token++; try { if (curSrc) curSrc.stop(); } catch (e) { } curSrc = null; try { if (TTS) speechSynthesis.cancel(); } catch (e) { } }
+  // <audio> 元素池：一个给发音，六个轮流给音效。在手势里先各播一次静音，之后才能被程序随时播放
+  const voiceEl = new Audio(), sfxEls = [new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio()];
+  let sfxIdx = 0, mediaReady = false;
+  [voiceEl].concat(sfxEls).forEach(el => { el.preload = 'auto'; el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', ''); });
+  function wakeMedia() {
+    if (mediaReady) return;
+    [voiceEl].concat(sfxEls).forEach(el => {
+      if (el.dataset.ok || !el.paused) return;
+      try {
+        el.src = SILENT; el.volume = 0;
+        const p = el.play();
+        const ok = () => { el.dataset.ok = '1'; el.volume = 1; if ([voiceEl].concat(sfxEls).every(x => x.dataset.ok)) mediaReady = true; };
+        if (p && p.then) p.then(ok, () => { el.volume = 1; }); else ok();
+      } catch (e) { }
+    });
+  }
+  function unlockAudio() { wakeAC(); wakeMedia(); }
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && AC && AC.state !== 'running') wakeAC(); });
+
+  // 解码（带缓存）；失败的条目记下来，以后直接走 <audio>
+  function decode(key, b64, ok, fail) {
+    if (bufCache[key]) { ok(bufCache[key]); return; }
+    if (badDecode[key]) { fail(); return; }
+    let done = false;
+    const good = b => { if (done) return; done = true; bufCache[key] = b; ok(b); };
+    const bad = () => { if (done) return; done = true; badDecode[key] = 1; fail(); };
+    try {
+      const p = AC.decodeAudioData(bytesOf(b64).buffer, good, bad);
+      if (p && p.then) p.then(good, bad);
+    } catch (e) { bad(); }
+  }
+  function mediaPlay(el, b64, vol, onend) {
+    try {
+      el.onended = onend || null; el.onerror = onend || null;
+      el.src = 'data:audio/mpeg;base64,' + b64; el.volume = vol == null ? 1 : vol;
+      const p = el.play();
+      if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { if (onend) onend(); });
+      return true;
+    } catch (e) { if (onend) onend(); return false; }
+  }
+  // 播一段 Base64 MP3。voice=true 时打断上一段发音
+  function playClip(key, b64, opt) {
+    opt = opt || {};
+    const my = opt.voice ? token : 0, onend = opt.onend;
+    wakeAC();
+    const fallback = () => {
+      if (opt.voice && my !== token) return;
+      mediaPlay(opt.voice ? voiceEl : sfxEls[sfxIdx++ % sfxEls.length], b64, opt.vol, onend);
+    };
+    if (!acRunning()) { fallback(); return; }
+    decode(key, b64, buf => {
+      if (opt.voice && my !== token) return;
+      if (!acRunning()) { fallback(); return; }
+      try {
+        const s = AC.createBufferSource(), g = AC.createGain();
+        s.buffer = buf; g.gain.value = opt.vol == null ? 1 : opt.vol;
+        s.connect(g); g.connect(AC.destination);
+        if (onend) s.onended = () => { if (!opt.voice || my === token) onend(); };
+        s.start(AC.currentTime + (opt.delay || 0));
+        if (opt.voice) voiceSrc = s;
+      } catch (e) { fallback(); }
+    }, fallback);
+  }
+  function stopVoice() {
+    token++;
+    try { if (voiceSrc) voiceSrc.stop(); } catch (e) { } voiceSrc = null;
+    try { voiceEl.pause(); } catch (e) { }
+    try { if (TTS) speechSynthesis.cancel(); } catch (e) { }
+  }
   function ttsSpeak(text, onend) {
     if (!TTS) { if (onend) onend(); return; }
     try {
@@ -266,25 +345,22 @@
   }
   function speak(word, onend) {
     const k = BYW[word], w = k != null ? WORDS[k] : null, CL = clips();
-    stopAll(); const my = token;
+    stopVoice();
     if (!w || !CL || !CL[w.i]) { ttsSpeak(word, onend); return; }
-    const ac = getAC(); if (!ac) { ttsSpeak(word, onend); return; }
-    const go = buf => {
-      if (my !== token) return;
-      const s = ac.createBufferSource(); s.buffer = buf; s.connect(ac.destination);
-      s.onended = () => { if (my === token && onend) onend(); };
-      s.start(0); curSrc = s;
-    };
-    if (bufCache[w.i]) { go(bufCache[w.i]); return; }
-    try {
-      const p = ac.decodeAudioData(bytesOf(CL[w.i]).buffer, b => { bufCache[w.i] = b; go(b); }, () => ttsSpeak(word, onend));
-      if (p && p.catch) p.catch(() => { });
-    } catch (e) { ttsSpeak(word, onend); }
+    playClip('w' + w.i, CL[w.i], { voice: true, onend: onend });
+  }
+  // 音效：合成好的 MP3（tools/sfx.py）；还没加载完时用振荡器顶一下
+  function sfx(name, vol, delay) {
+    if (!S.set.sound) return;
+    const X = sfxClips();
+    if (X && X[name]) { if (delay) setTimeout(() => playClip('s' + name, X[name], { vol: vol }), delay * 1000); else playClip('s' + name, X[name], { vol: vol }); return; }
+    const alt = { ok: [[880, .14], [1318.5, .22]], bad: [[220, .2, 'triangle', .14], [174.6, .28, 'triangle', .12]], done: [[784, .14], [988, .14], [1175, .14], [1568, .3]] }[name];
+    if (alt) tone(alt);
   }
   function tone(seq) {
     if (!S.set.sound) return;
     try {
-      getAC(); if (!AC) return;
+      wakeAC(); if (!acRunning()) return;
       let t = AC.currentTime + .01;
       seq.forEach(x => {
         const o = AC.createOscillator(), g = AC.createGain();
@@ -294,10 +370,11 @@
       });
     } catch (e) { }
   }
-  const sfxOk = () => tone([[880, .14], [1318.5, .22]]);
-  const sfxBad = () => tone([[220, .2, 'triangle', .14], [174.6, .28, 'triangle', .12]]);
-  const sfxDone = () => tone([[784, .14], [988, .14], [1175, .14], [1568, .3]]);
-  const sfxRare = r => tone(r >= 5 ? [[523, .2], [659, .2], [784, .2], [1047, .3], [1319, .5]] : r >= 3 ? [[659, .16], [880, .16], [1175, .36]] : [[880, .12], [1175, .2]]);
+  const sfxOk = () => sfx('ok');
+  const sfxBad = () => sfx('bad');
+  const sfxDone = () => sfx('done');
+  // 揭晓：按稀有度（卡面等级和邮戳取高）选音效，越稀有越隆重
+  const sfxRare = r => sfx(r >= 6 ? 'r6' : r >= 5 ? 'r5' : r >= 4 ? 'r4' : r >= 3 ? 'r3' : r >= 2 ? 'r2' : 'r0');
 
   /* ================= 通用 UI ================= */
   let toastT = null;
@@ -673,7 +750,7 @@
   }
   function answerFlash(r) {
     const it = Q.items[Q.i]; if (it.done) return;
-    if (r === 1) { it.done = true; Q.answered++; Q.wrongs.push(it.w); record(it.w.k, false, { soft: true }); bump(false); tone([[523, .16]]); setTop(); }
+    if (r === 1) { it.done = true; Q.answered++; Q.wrongs.push(it.w); record(it.w.k, false, { soft: true }); bump(false); sfx('bad', .7); setTop(); }
     else settle(r === 2, it);
     const flip = $('#flip');
     $$('#fbtns .btn').forEach(b => { b.disabled = true; });
@@ -688,7 +765,7 @@
   $('#qQuit').addEventListener('click', () => {
     modal('结束这一轮？', Q.answered ? `已答 ${Q.answered} 题，照常结算。` : '还没有答题。', [
       { label: '继续答题' },
-      { label: Q.answered ? '结束并结算' : '回到首页', cls: 'dark', fn: () => { clearTimeout(Q.auto); stopAll(); if (Q.answered) { Q.items = Q.items.slice(0, Q.answered); finish(); } else show('home'); } }]);
+      { label: Q.answered ? '结束并结算' : '回到首页', cls: 'dark', fn: () => { clearTimeout(Q.auto); stopVoice(); if (Q.answered) { Q.items = Q.items.slice(0, Q.answered); finish(); } else show('home'); } }]);
   });
   document.addEventListener('keydown', e => {
     if (view !== 'quiz' || !Q || !$('#modal').hidden) return;
@@ -782,6 +859,7 @@
   function doDraw(n) {
     if (ticketCount() < n) { toast('抽卡券不够了'); return; }
     unlockAudio();
+    sfx('open');
     const res = [];
     for (let i = 0; i < n; i++) { const r = drawOne(); if (r) res.push(r); }
     save();
@@ -869,6 +947,8 @@
     $('#rvOk').addEventListener('click', () => { if (ticketCount()) { revealClose(); doDraw(1); } else { revealClose(); show('album'); } });
     const hype = Math.max(r.rank, r.srank + 2);
     const delay = hype >= 4 ? 1500 : hype >= 3 ? 1100 : 700;
+    if (hype >= 3) sfx('charge', hype >= 5 ? 1 : .8, (delay - 1050) / 1000);
+    if (r.srank >= 1) sfx('stamp', .8, delay / 1000 + .5);
     setTimeout(() => {
       const ov = $('#reveal'); ov.classList.remove('stage-pre'); ov.classList.add('stage-on');
       sfxRare(hype);
@@ -900,6 +980,8 @@
     $('#rvOk').addEventListener('click', () => { revealClose(); show('album'); });
     $('#rvAgain').addEventListener('click', () => { revealClose(); doDraw(10); });
     const bh = Math.max(best.rank, best.srank + 2);
+    list.forEach((x, i) => sfx('flick', .6, .15 + i * .11));
+    if (bh >= 3) sfx('charge', .8, .15);
     setTimeout(() => { sfxRare(bh); if (bh >= 3) confettiBurst(bh); }, 1200);
   }
 
@@ -1189,6 +1271,92 @@
     ctx.fillStyle = dark ? '#16121F' : '#F6EEF3'; ctx.fillRect(0, 0, W, H);
     cover(ctx, im, 0, 0, W, H);
   }
+  /* ---------- 海报里的 3D 卡片：平面卡面 → 透视投影（网格三角形贴图），带厚度、高光、倒影 ---------- */
+  function projector(ry, rx, D) {
+    const sy = Math.sin(ry), cy = Math.cos(ry), sx = Math.sin(rx), cx = Math.cos(rx);
+    return (x, y, z) => {
+      const y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+      const x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+      const k = D / (D + z2);
+      return [x2 * k, y1 * k];
+    };
+  }
+  // 纹理三角形：把 src 里 (t0,t1,t2) 三角形仿射映射到屏幕 (p0,p1,p2)
+  function texTri(ctx, src, p0, p1, p2, t0, t1, t2) {
+    const mx = (p0[0] + p1[0] + p2[0]) / 3, my = (p0[1] + p1[1] + p2[1]) / 3;
+    const inf = q => { const dx = q[0] - mx, dy = q[1] - my, l = Math.sqrt(dx * dx + dy * dy) || 1; return [q[0] + dx / l * .8, q[1] + dy / l * .8]; };
+    const a = inf(p0), b = inf(p1), c = inf(p2);
+    const u0 = t0[0], v0 = t0[1], u1 = t1[0], v1 = t1[1], u2 = t2[0], v2 = t2[1];
+    const det = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0); if (!det) return;
+    const ma = ((p1[0] - p0[0]) * (v2 - v0) - (p2[0] - p0[0]) * (v1 - v0)) / det;
+    const mb = ((p1[1] - p0[1]) * (v2 - v0) - (p2[1] - p0[1]) * (v1 - v0)) / det;
+    const mc = ((p2[0] - p0[0]) * (u1 - u0) - (p1[0] - p0[0]) * (u2 - u0)) / det;
+    const md = ((p2[1] - p0[1]) * (u1 - u0) - (p1[1] - p0[1]) * (u2 - u0)) / det;
+    const me = p0[0] - ma * u0 - mc * v0, mf = p0[1] - mb * u0 - md * v0;
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.closePath(); ctx.clip();
+    ctx.transform(ma, mb, mc, md, me, mf);
+    const x0 = Math.max(0, Math.min(u0, u1, u2) - 2), y0 = Math.max(0, Math.min(v0, v1, v2) - 2);
+    const x1 = Math.min(src.width, Math.max(u0, u1, u2) + 2), y1 = Math.min(src.height, Math.max(v0, v1, v2) + 2);
+    ctx.drawImage(src, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    ctx.restore();
+  }
+  function roundPts(w, h, r, n) {
+    const pts = [], c = [[w / 2 - r, -h / 2 + r, -Math.PI / 2], [w / 2 - r, h / 2 - r, 0], [-w / 2 + r, h / 2 - r, Math.PI / 2], [-w / 2 + r, -h / 2 + r, Math.PI]];
+    c.forEach(q => { for (let i = 0; i <= n; i++) { const a = q[2] + i / n * Math.PI / 2; pts.push([q[0] + Math.cos(a) * r, q[1] + Math.sin(a) * r]); } });
+    return pts;
+  }
+  function path(ctx, pts) { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); }
+  // 在 (X,Y) 处画一张立体卡。face：平面卡面画布（尺寸 = w*k × h*k）
+  function card3D(ctx, face, X, Y, w, h, o) {
+    const k = face.width / w, P = projector(o.ry, o.rx, o.D || 2200), T = o.depth || w * .018;
+    const ra = (o.rot || 0) * Math.PI / 180, rc = Math.cos(ra), rsn = Math.sin(ra);
+    const sp = (x, y, z) => { const q = P(x, y, z); return [X + q[0] * rc - q[1] * rsn, Y + q[0] * rsn + q[1] * rc]; };
+    const rim = roundPts(w, h, w * .045, 6);
+    const front = rim.map(q => sp(q[0], q[1], 0)), back = rim.map(q => sp(q[0], q[1], T));
+    // 地面阴影
+    const ys = front.map(q => q[1]), bot = Math.max.apply(null, ys);
+    ctx.save(); ctx.shadowColor = o.shadow; ctx.shadowBlur = w * .12; ctx.shadowOffsetY = 3000;
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse ? ctx.ellipse(X, bot - 3000 + 8, w * .46, w * .05, 0, 0, Math.PI * 2) : ctx.arc(X, bot - 3000, w * .3, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    // 外发光
+    if (o.glow) { ctx.save(); ctx.shadowColor = o.glow; ctx.shadowBlur = w * .16; ctx.fillStyle = o.glow; path(ctx, front); ctx.fill(); ctx.restore(); }
+    // 厚度：背面轮廓 + 侧面，正面再盖上去，只露出朝向镜头的那一侧
+    const xs = front.map(q => q[0]), L = Math.min.apply(null, xs), R = Math.max.apply(null, xs);
+    const eg = ctx.createLinearGradient(L, 0, R, 0);
+    o.edge.forEach((c, i) => eg.addColorStop(i / (o.edge.length - 1), c));
+    ctx.fillStyle = eg; path(ctx, back); ctx.fill();
+    for (let i = 0; i < rim.length; i++) {
+      const j = (i + 1) % rim.length;
+      ctx.beginPath(); ctx.moveTo(front[i][0], front[i][1]); ctx.lineTo(front[j][0], front[j][1]); ctx.lineTo(back[j][0], back[j][1]); ctx.lineTo(back[i][0], back[i][1]); ctx.closePath(); ctx.fill();
+    }
+    // 正面：网格贴图
+    ctx.save(); path(ctx, front); ctx.clip();
+    const NX = 14, NY = Math.round(14 * h / w);
+    for (let gy = 0; gy < NY; gy++) for (let gx = 0; gx < NX; gx++) {
+      const xa = -w / 2 + w * gx / NX, xb = -w / 2 + w * (gx + 1) / NX, ya = -h / 2 + h * gy / NY, yb = -h / 2 + h * (gy + 1) / NY;
+      const A = sp(xa, ya, 0), B = sp(xb, ya, 0), Cc = sp(xb, yb, 0), Dd = sp(xa, yb, 0);
+      const ta = [(xa + w / 2) * k, (ya + h / 2) * k], tb = [(xb + w / 2) * k, (ya + h / 2) * k], tc = [(xb + w / 2) * k, (yb + h / 2) * k], td = [(xa + w / 2) * k, (yb + h / 2) * k];
+      texTri(ctx, face, A, B, Cc, ta, tb, tc); texTri(ctx, face, A, Cc, Dd, ta, tc, td);
+    }
+    // 镜面高光 + 一道斜向的镭射反光
+    const g0 = sp(-w * .22, -h * .3, 0);
+    const gl = ctx.createRadialGradient(g0[0], g0[1], 0, g0[0], g0[1], w * .95);
+    gl.addColorStop(0, 'rgba(255,255,255,.42)'); gl.addColorStop(.45, 'rgba(255,255,255,.08)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = gl; ctx.fillRect(L - 10, Math.min.apply(null, ys) - 10, R - L + 20, bot - Math.min.apply(null, ys) + 20);
+    const s0 = sp(-w * .5, -h * .1, 0), s1 = sp(w * .5, h * .25, 0);
+    const sg = ctx.createLinearGradient(s0[0], s0[1], s1[0], s1[1]);
+    [['rgba(255,255,255,0)', 0], ['rgba(255,190,230,.0)', .34], ['rgba(255,214,236,.22)', .42], ['rgba(220,240,255,.3)', .47], ['rgba(214,255,236,.2)', .52], ['rgba(255,255,255,0)', .62], ['rgba(255,255,255,0)', 1]].forEach(x => sg.addColorStop(x[1], x[0]));
+    ctx.fillStyle = sg; ctx.fillRect(L - 10, Math.min.apply(null, ys) - 10, R - L + 20, bot - Math.min.apply(null, ys) + 20);
+    ctx.restore();
+    // 边缘的一圈受光
+    ctx.save(); path(ctx, front); ctx.lineWidth = 2; ctx.strokeStyle = o.rim; ctx.stroke(); ctx.restore();
+    return { bot: bot, L: L, R: R, top: Math.min.apply(null, ys) };
+  }
+  function star4(ctx, x, y, r) {
+    ctx.beginPath(); ctx.moveTo(x, y - r);
+    ctx.quadraticCurveTo(x, y, x + r, y); ctx.quadraticCurveTo(x, y, x, y + r);
+    ctx.quadraticCurveTo(x, y, x - r, y); ctx.quadraticCurveTo(x, y, x, y - r); ctx.fill();
+  }
   async function cardPoster(k, vid, safe, seal) {
     const v = C.BY_ID[vid], w = WORDS[k], t = TIER[v.tier];
     await fontsReady();
@@ -1202,19 +1370,66 @@
     const ctx = cv.getContext('2d');
     bgFill(ctx, W, H, bg, dark);
     const fg = dark ? '#FFFFFF' : '#1F1C24', sub = dark ? 'rgba(255,255,255,.7)' : 'rgba(31,28,36,.62)';
+    // 卡面平面图（1.6 倍分辨率，投影后依然清晰）
+    let cw, ch;
+    if (v.land) { cw = 840; ch = cw * 250 / 386; } else { cw = 540; ch = cw * 386 / 250; }
+    const KX = 1.6, face = document.createElement('canvas'); face.width = Math.round(cw * KX); face.height = Math.round(ch * KX);
+    const fctx = face.getContext('2d'); fctx.scale(KX, KX);
+    await drawCardTo(fctx, 0, 0, cw, ch, vid, w, imgs);
+    const X = W / 2, Y = v.land ? 650 : 330 + ch / 2;
+    // 背光：卡后面一团柔光 + 稀有卡的放射光
+    const glow = dark ? 'rgba(170,150,255,' : 'rgba(255,255,255,';
+    const rg = ctx.createRadialGradient(X, Y, 0, X, Y, W * .62);
+    rg.addColorStop(0, glow + (dark ? '.42)' : '.75)')); rg.addColorStop(.5, glow + '.12)'); rg.addColorStop(1, glow + '0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+    if (v.rank >= 3) {
+      ctx.save(); ctx.translate(X, Y); ctx.globalCompositeOperation = dark ? 'screen' : 'soft-light';
+      for (let i = 0; i < 28; i++) {
+        const a = i / 28 * Math.PI * 2 + .1, wd = .025 + (i % 3) * .012;
+        const g = ctx.createLinearGradient(0, 0, Math.cos(a) * 900, Math.sin(a) * 900);
+        g.addColorStop(0, glow + (dark ? '.13)' : '.42)')); g.addColorStop(.7, glow + '0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a - wd) * 900, Math.sin(a - wd) * 900); ctx.lineTo(Math.cos(a + wd) * 900, Math.sin(a + wd) * 900); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+    // 标题
     ctx.fillStyle = sub; ctx.font = `500 26px ${SA}`; spaced(ctx, (v.tier === 'SECRET' ? 'SECRET' : v.tier) + ' · ' + t.cn, W / 2, 110, 10, 'center');
     ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.font = `italic 400 84px ${SE}`; ctx.fillText(v.en, W / 2, 200);
     ctx.font = `600 32px ${SC}`; spaced(ctx, v.cn, W / 2, 252, 14, 'center');
-    let cw, ch;
-    if (v.land) { cw = 920; ch = cw * 250 / 386; } else { cw = 580; ch = cw * 386 / 250; }
-    const cx = (W - cw) / 2, cy = v.land ? 400 : 310;
-    ctx.save(); ctx.shadowColor = dark ? 'rgba(160,140,255,.45)' : 'rgba(120,80,150,.28)'; ctx.shadowBlur = 60; ctx.shadowOffsetY = 20;
-    ctx.fillStyle = '#fff'; rr(ctx, cx, cy, cw, ch, cw * .045); ctx.fill(); ctx.restore();
-    await drawCardTo(ctx, cx, cy, cw, ch, vid, w, imgs);
+    // 立体卡：先画到一层上，好做倒影
+    const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
+    const lctx = layer.getContext('2d');
+    const gold = v.frame === 3 || v.gold;
+    const box = card3D(lctx, face, X, Y, cw, ch, {
+      ry: (v.land ? -14 : -20) * Math.PI / 180, rx: 8 * Math.PI / 180, D: 2200, depth: cw * .03,
+      edge: gold ? ['#FFF3D6', '#E9C27E', '#B8873E', '#7A5626'] : v.lt ? ['#E4DBFF', '#9C8BD6', '#5B4C93', '#3A2E66'] : ['#FFFFFF', '#F1E8F2', '#D9CCE0', '#B7A8C2'],
+      rim: gold ? 'rgba(255,236,200,.75)' : 'rgba(255,255,255,.7)',
+      shadow: dark ? 'rgba(0,0,0,.7)' : 'rgba(90,60,120,.38)', glow: dark ? 'rgba(150,130,255,.35)' : null
+    });
+    // 倒影：翻转、渐隐
+    const floor = box.bot + 4;
+    const refl = document.createElement('canvas'); refl.width = W; refl.height = H;
+    const rctx = refl.getContext('2d');
+    rctx.save(); rctx.translate(0, floor * 2); rctx.scale(1, -1); rctx.drawImage(layer, 0, 0); rctx.restore();
+    const fade = rctx.createLinearGradient(0, floor, 0, floor + 120);
+    fade.addColorStop(0, 'rgba(0,0,0,' + (dark ? .26 : .2) + ')'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+    rctx.globalCompositeOperation = 'destination-in'; rctx.fillStyle = fade; rctx.fillRect(0, 0, W, H);
+    ctx.drawImage(refl, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    // 星光
+    let sd = vid.length * 97 + k;
+    const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    ctx.fillStyle = dark ? '#FFFFFF' : '#FFFFFF';
+    for (let i = 0; i < 16; i++) {
+      const a = rnd() * Math.PI * 2, r = (v.land ? 470 : 360) + rnd() * 120;
+      const x = X + Math.cos(a) * r * (v.land ? 1 : .95), y = Y + Math.sin(a) * r * (v.land ? .6 : 1.1);
+      if (y < 290 || y > floor + 40) continue;
+      ctx.globalAlpha = .45 + rnd() * .5; star4(ctx, x, y, 6 + rnd() * 16);
+    }
+    ctx.globalAlpha = 1;
     ctx.textAlign = 'center'; ctx.fillStyle = sub; ctx.font = `400 26px ${SA}`;
-    const by = cy + ch + 74;
     const sl = seal && SEAL[seal];
-    ctx.fillText(sl ? `${t.cn} · ${sl.tcn}「${sl.cn}」` : t.cn, W / 2, by);
+    ctx.fillText(sl ? `${t.cn} · ${sl.tcn}「${sl.cn}」` : t.cn, W / 2, Math.min(H - 150, floor + 140));
     ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('单词手账 · 高考核心 688 词', W / 2, H - 70);
     return cv;
   }
@@ -1230,8 +1445,40 @@
     ctx.fillStyle = sub; ctx.font = `300 34px ${SC}`; ctx.fillText(d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate()), 90, 140);
     ctx.textAlign = 'right'; ctx.font = `600 30px ${SA}`; ctx.fillText('DAY ' + pad2(Math.max(1, streak())), W - 90, 140); ctx.textAlign = 'left';
     ctx.fillStyle = fg; ctx.font = `600 64px ${SC}`; ctx.fillText(R.kind === 'test' ? '全部测试' : R.label + ' · ' + (TYPE_NAME[R.mode] || ''), 90, 250);
-    ctx.font = `300 260px ${SC}`; ctx.fillText(String(R.right), 80, 520);
+    // 立体分数：先叠出厚度，再盖上渐变的正面
+    ctx.font = `300 260px ${SC}`;
     const sw = ctx.measureText(String(R.right)).width;
+    for (let i = 14; i >= 1; i--) { ctx.fillStyle = dark ? `rgba(${60 + i * 4},${40 + i * 3},${110 + i * 4},1)` : `rgba(${196 - i * 3},${170 - i * 3},${214 - i * 2},1)`; ctx.fillText(String(R.right), 80 + i * .9, 520 + i * 1.3); }
+    const sg = ctx.createLinearGradient(80, 300, 80 + sw, 520);
+    (dark ? ['#FFFFFF', '#E6DCFF', '#C9D9FF', '#FFE9F3'] : ['#2A2238', '#4A3A6A', '#2A2238', '#5A3E66']).forEach((c, i, a) => sg.addColorStop(i / (a.length - 1), c));
+    ctx.fillStyle = sg; ctx.fillText(String(R.right), 80, 520);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; const hl = ctx.createLinearGradient(0, 330, 0, 420); hl.addColorStop(0, 'rgba(255,255,255,.35)'); hl.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = hl; ctx.fillText(String(R.right), 80, 520); ctx.restore();
+    ctx.fillStyle = fg;
+    // 右侧：卡册里最稀有的三张，扇形立体展开
+    if (!safe) {
+      const own = [];
+      Object.keys(S.cards).forEach(k => ownVids(+k).forEach(id => own.push(id)));
+      const uniq = own.filter((x, i) => own.indexOf(x) === i && !C.BY_ID[x].land).sort((a, b) => C.BY_ID[b].rank - C.BY_ID[a].rank);
+      const fan = (uniq.length >= 3 ? uniq.slice(0, 3) : ['sr1', 'ssr1', 'lr1']).reverse();
+      const cw = 170, chh = cw * 386 / 250;
+      for (let i = 0; i < fan.length; i++) {
+        const id = fan[i], fv = C.BY_ID[id], art = await loadImg('img/art/' + id + '.webp');
+        const f = document.createElement('canvas'); f.width = Math.round(cw * 2); f.height = Math.round(chh * 2);
+        const fc = f.getContext('2d'); fc.scale(2, 2);
+        rr(fc, 0, 0, cw, chh, cw * .05); fc.clip(); cover(fc, art, 0, 0, cw, chh);
+        if (fv.rank >= 2) { const g = fc.createLinearGradient(0, 0, cw, chh); ['#ff9ad5', '#fff3a8', '#9effd8', '#9ad7ff', '#d5a8ff'].forEach((c, j) => g.addColorStop(j / 4, c)); fc.globalCompositeOperation = 'soft-light'; fc.globalAlpha = .5; fc.fillStyle = g; fc.fillRect(0, 0, cw, chh); fc.globalCompositeOperation = 'source-over'; fc.globalAlpha = 1; }
+        if (fv.frame) { fc.strokeStyle = fv.frame === 3 ? '#F2D7A2' : 'rgba(255,255,255,.9)'; fc.lineWidth = 1.5; rr(fc, cw * .045, chh * .03, cw * .91, chh * .94, cw * .04); fc.stroke(); }
+        fc.fillStyle = fv.lt ? '#fff' : '#1F1C24'; fc.font = `700 ${cw * .07}px ${SA}`; fc.fillText(fv.tier, cw * .1, cw * .14);
+        fc.font = `italic 400 ${cw * .1}px ${SE}`; fc.globalAlpha = .85; fc.fillText(fv.en, cw * .1, cw * .26); fc.globalAlpha = 1;
+        const ang = (i - 1) * 13;
+        card3D(ctx, f, 800 + (i - 1) * 92, 410 + Math.abs(i - 1) * 16, cw, chh, {
+          ry: (-14 - (i - 1) * 6) * Math.PI / 180, rx: 6 * Math.PI / 180, D: 1600, depth: cw * .035,
+          edge: fv.frame === 3 ? ['#FFF3D6', '#E9C27E', '#B8873E'] : ['#FFFFFF', '#E7DDEC', '#B7A8C2'], rim: 'rgba(255,255,255,.7)',
+          shadow: dark ? 'rgba(0,0,0,.6)' : 'rgba(90,60,120,.3)', glow: null, rot: ang
+        });
+      }
+      ctx.textAlign = 'left';
+    }
     ctx.fillStyle = sub; ctx.font = `300 70px ${SC}`; ctx.fillText('/ ' + R.total, 100 + sw, 520);
     const kv = [[R.pct + '%', '正确率'], [String(R.best), '最长连对'], [R.time, '用时'], ['+' + R.gain, '抽卡券']];
     kv.forEach((x, i) => {

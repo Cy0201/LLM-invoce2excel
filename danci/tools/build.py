@@ -279,7 +279,7 @@ def referenced_ok():
     bad = []
     for root, _, files in os.walk(DIST):
         for n in files:
-            if not n.endswith(('.html', '.css', '.js')) or n == 'audio-clips.js':
+            if not n.endswith(('.html', '.css', '.js')) or n in ('audio-clips.js', 'sfx-clips.js'):
                 continue
             p = os.path.join(root, n)
             text = open(p, encoding='utf-8').read()
@@ -341,7 +341,7 @@ def checks(zip_path):
               r'<iframe', r'type="module"', r'https?://(?!www\.w3\.org)']
     for root, _, files in os.walk(DIST):
         for n in files:
-            if not n.endswith(('.html', '.js', '.css')) or n == 'audio-clips.js':
+            if not n.endswith(('.html', '.js', '.css')) or n in ('audio-clips.js', 'sfx-clips.js'):
                 continue
             p = os.path.join(root, n)
             text = open(p, encoding='utf-8').read()
