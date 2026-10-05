@@ -1,0 +1,11 @@
+{
+  "name": "danci-shouzhang-tools",
+  "private": true,
+  "description": "构建期工具：字体子集源、ES2017 语法检查、holokit 打包",
+  "devDependencies": {
+    "@fontsource/noto-serif-sc": "5.2.9",
+    "acorn": "^8.14.0",
+    "acorn-walk": "^8.3.4",
+    "esbuild": "^0.25.0"
+  }
+}

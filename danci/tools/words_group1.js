@@ -1,0 +1,22 @@
+window.WS={
+personal:{w:'personal',p:'/ˈpɜːsənl/',pos:'adj.',m:'个人的；私人的',no:'001',g:1,line:['My most personal secret has your name in it.','我最私密的心事里，藏着你的名字。']},
+tie:{w:'tie',p:'/taɪ/',pos:'n.',m:'纽带；领带',no:'002',g:1,line:['Some ties are made of light, not string.','有些羁绊不是丝线，是光。']},
+still:{w:'still',p:'/stɪl/',pos:'adv.',m:'仍然；还',no:'003',g:1,line:['Still here. Still soft. Still yours.','还在这里，还很温柔，还是你的。']},
+offer:{w:'offer',p:'/ˈɒfə/',pos:'v.',m:'提供；愿意做',no:'004',g:1,line:['I’d offer you the moon, and keep the stars for us.','把月亮给你，星星留给我们。']},
+addition:{w:'addition',p:'/əˈdɪʃn/',pos:'n.',m:'增加；附加物',no:'005',g:1,line:['You are the softest addition to my sky.','你是我天空里最温柔的新增。']},
+success:{w:'success',p:'/səkˈses/',pos:'n.',m:'成功',no:'006',g:1,line:['The sweetest success blooms slowly.','最甜的成功，总是慢慢开花。']},
+produce:{w:'produce',p:'/prəˈdjuːs/',pos:'v.',m:'生产；引起',no:'007',g:1,line:['One smile of yours can produce a whole spring.','你笑一下，就长出一整个春天。']},
+expect:{w:'expect',p:'/ɪkˈspekt/',pos:'v.',m:'预料；期待',no:'008',g:1,line:['I didn’t expect you. That was the magic.','没想到会遇见你，这就是魔法。']},
+cause:{w:'cause',p:'/kɔːz/',pos:'n.',m:'原因；事业',no:'009',g:1,line:['You are the cause of every quiet smile.','每一个偷偷的微笑，原因都是你。']},
+state:{w:'state',p:'/steɪt/',pos:'n.',m:'状态；国家',no:'010',g:1,line:['A heart in a state of gentle bloom.','一颗正在温柔盛放的心。']},
+manage:{w:'manage',p:'/ˈmænɪdʒ/',pos:'v.',m:'管理；设法做成',no:'011',g:1,line:['Somehow, I always manage to find you.','不知怎么，我总能找到你。']},
+directly:{w:'directly',p:'/dəˈrektli/',pos:'adv.',m:'直接地；径直',no:'012',g:1,line:['Moonlight falls directly into my heart.','月光径直落进我心里。']},
+improve:{w:'improve',p:'/ɪmˈpruːv/',pos:'v.',m:'改善；提高',no:'013',g:1,line:['Every day improves a little when you’re near.','你在的时候，每天都好一点点。']},
+wonder:{w:'wonder',p:'/ˈwʌndə/',pos:'v.',m:'想知道；好奇',no:'014',g:1,line:['I wonder if the stars wonder about us.','我在想，星星会不会也在想我们。']},
+present:{w:'present',p:'/ˈpreznt/',pos:'n.',m:'礼物；现在',no:'015',g:1,line:['You are my favorite present, in every present.','每一个此刻，你都是我最爱的礼物。']},
+underline:{w:'underline',p:'/ˌʌndəˈlaɪn/',pos:'v.',m:'在…下画线；强调',no:'016',g:1,line:['Underline this moment. It is ours.','给这一刻划上重点，它属于我们。']},
+mislead:{w:'mislead',p:'/ˌmɪsˈliːd/',pos:'v.',m:'误导；带错路',no:'017',g:1,line:['Even moonlight can mislead a dreaming heart.','连月光也会误导做梦的心。']},
+complete:{w:'complete',p:'/kəmˈpliːt/',pos:'adj.',m:'完整的；彻底的',no:'018',g:1,line:['With you, the evening feels complete.','有你在，这个黄昏才算完整。']},
+lead:{w:'lead',p:'/liːd/',pos:'v.',m:'带领；导致',no:'019',g:1,line:['Let the stars lead you home.','让星星带你回家。']},
+sensitive:{w:'sensitive',p:'/ˈsensətɪv/',pos:'adj.',m:'敏感的；灵敏的',no:'020',g:1,line:['A sensitive heart can hear flowers open.','敏感的心，能听见花开。']}
+};

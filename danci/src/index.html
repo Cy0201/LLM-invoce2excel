@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>单词手账</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#F3E9F0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#boot{position:fixed;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:15px;color:#8d8690;letter-spacing:.2em}
+</style>
+<link rel="stylesheet" href="./css/fonts.css" />
+<link rel="stylesheet" href="./css/holo-cards.css" />
+<link rel="stylesheet" href="./css/app.css" />
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><!--ICONS--></svg>
+<div id="boot">单词手账</div>
+
+<div id="app" class="app" hidden>
+  <!-- ============ 首页 ============ -->
+  <section id="v-home" class="view bg-home" data-tab="home">
+    <div class="page">
+      <header class="hd">
+        <div><div class="hd-d" id="hDate"></div><h1>单词手账</h1></div>
+        <div class="hd-r">
+          <button type="button" class="pill gl" id="hStreak" aria-label="连续打卡"><svg class="ic fl"><use href="#i-flame-f"/></svg><b>0</b>天</button>
+          <button type="button" class="ibtn gl" data-act="settings" aria-label="设置"><svg class="ic"><use href="#i-gear-six"/></svg></button>
+        </div>
+      </header>
+      <button type="button" class="quote gl" id="hQuote"></button>
+      <div class="cont gl" id="hCont"></div>
+      <div class="ft" id="hTest" role="button" tabindex="0">
+        <div class="ft-tx"><b>全部测试</b><div class="s">688 词随机出题<br>正确率越高，抽卡概率越高</div></div>
+        <button type="button" class="ft-tk" data-act="draw"><svg class="ic"><use href="#i-ticket-f"/></svg>抽卡券<i id="hTickets">0</i></button>
+        <div class="fan" id="hFan"></div>
+      </div>
+      <div class="sec"><h3>练习方式</h3><button type="button" class="sec-a" data-act="groups"><span id="hGroupLab">第 1 组</span> · 35 组<svg class="ic"><use href="#i-caret-right"/></svg></button></div>
+      <div class="modes" id="hModes"></div>
+    </div>
+  </section>
+
+  <!-- ============ 答题 ============ -->
+  <section id="v-quiz" class="view bg-quiz" hidden>
+    <div class="page qpage">
+      <div class="qt">
+        <button type="button" class="ibtn gl" id="qQuit" aria-label="结束本轮"><svg class="ic"><use href="#i-x"/></svg></button>
+        <div class="qbar"><i id="qTrack"></i></div>
+        <div class="qn" id="qCount">1 / 20</div>
+      </div>
+      <div class="chips">
+        <span class="chip gl" id="qCombo"><svg class="ic"><use href="#i-lightning-f"/></svg>连对 <b>0</b></span>
+        <span class="chip plus" id="qGain" hidden><svg class="ic"><use href="#i-ticket-f"/></svg>抽卡券 +<b>0</b></span>
+      </div>
+      <div id="qStage"></div>
+    </div>
+    <div class="fb" id="qFb" hidden></div>
+  </section>
+
+  <!-- ============ 结算 ============ -->
+  <section id="v-result" class="view bg-result" hidden>
+    <div class="page" id="rBody"></div>
+  </section>
+
+  <!-- ============ 抽卡 ============ -->
+  <section id="v-draw" class="view bg-reveal dark" hidden>
+    <div class="dust"></div>
+    <div class="page dpage" id="dBody"></div>
+  </section>
+
+  <!-- ============ 卡册 ============ -->
+  <section id="v-album" class="view bg-album" data-tab="album" hidden>
+    <div class="page" id="aBody"></div>
+  </section>
+
+  <!-- ============ 图鉴 ============ -->
+  <section id="v-gallery" class="view bg-gallery dark" hidden>
+    <div class="dust"></div>
+    <div class="page" id="gBody"></div>
+  </section>
+
+  <!-- ============ 词表 ============ -->
+  <section id="v-book" class="view bg-home" data-tab="book" hidden>
+    <div class="page">
+      <header class="bh"><h2>词表</h2><span class="bh-c" id="bCount"></span></header>
+      <div class="search gl"><svg class="ic"><use href="#i-magnifying-glass"/></svg><input id="bQ" type="search" placeholder="搜索单词或中文释义" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" /></div>
+      <div class="fchips" id="bChips"></div>
+      <div class="bsel"><button type="button" class="pill gl" id="bGroup">全部 35 组<svg class="ic"><use href="#i-caret-down"/></svg></button></div>
+      <div class="list" id="bList"></div>
+      <button type="button" class="more gl" id="bMore" hidden>再显示一些</button>
+    </div>
+  </section>
+
+  <nav class="tabs gl" id="tabs">
+    <button type="button" data-tab-go="home"><svg class="ic"><use href="#i-house-d"/></svg>学习</button>
+    <button type="button" data-tab-go="album"><svg class="ic"><use href="#i-book-bookmark-d"/></svg>卡册</button>
+    <button type="button" data-tab-go="book"><svg class="ic"><use href="#i-book-open-text-d"/></svg>词表</button>
+  </nav>
+</div>
+
+<!-- 揭晓 / 十连 -->
+<div id="reveal" class="ov dark bg-reveal" hidden>
+  <canvas id="cf" class="cf"></canvas>
+  <div class="dust"></div>
+  <div class="rv" id="rvBody"></div>
+</div>
+
+<!-- 卡片详情 -->
+<div id="viewer" class="ov dark" hidden>
+  <div class="vw" id="vwBody"></div>
+</div>
+
+<!-- 晒图 -->
+<div id="share" class="ov dim" hidden>
+  <div class="sh" id="shBody"></div>
+</div>
+
+<!-- 底部弹层 -->
+<div id="sheet" class="sheet-wrap" hidden>
+  <div class="sheet-bg" data-close-sheet></div>
+  <div class="sheet gl-solid" role="dialog" aria-modal="true"><div class="sheet-grip"></div><div id="sheetBody"></div></div>
+</div>
+
+<!-- 对话框 -->
+<div id="modal" class="modal-wrap" hidden>
+  <div class="modal gl-solid" role="alertdialog" aria-modal="true" aria-labelledby="modalH">
+    <h3 id="modalH"></h3><p id="modalP"></p><div class="modal-acts" id="modalActs"></div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="./js/data.js"></script>
+<script src="./js/catalog.js"></script>
+<script src="./js/lineart.js"></script>
+<script src="./js/holokit.js"></script>
+<script src="./js/cards.js"></script>
+<script src="./js/app.js"></script>
+<script src="./js/audio-clips.js" defer></script>
+</body>
+</html>
