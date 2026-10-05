@@ -1101,6 +1101,7 @@
   async function drawCardTo(ctx, x, y, W, H, vid, w, imgs) {
     const v = C.BY_ID[vid], land = !!v.land, u = (land ? H : W) * 0.24;
     ctx.save();
+    ctx.textAlign = 'left'; ctx.globalAlpha = 1; ctx.shadowColor = 'transparent';
     rr(ctx, x, y, W, H, W * .045); ctx.clip();
     ctx.fillStyle = '#eee'; ctx.fillRect(x, y, W, H);
     cover(ctx, imgs.art, x, y, W, H);
@@ -1138,9 +1139,9 @@
     yy += u * .19 + u * .3;
     ctx.font = `600 ${u * .23}px ${SC}`; ctx.fillText(w.cp + ' ' + w.cm, cx, yy);
     // 例句
-    const lw = land ? W * .56 : W * .8;
-    let ly = y + H * (land ? .66 : .6);
-    const long = w.en.length > 78 ? .78 : w.en.length > 58 ? .88 : 1;
+    const lw = land ? W * .6 : W * .8;
+    let ly = y + H * (land ? .665 : .6);
+    const long = (w.en.length > 78 ? .78 : w.en.length > 58 ? .88 : 1) * (land ? .86 : 1);
     ctx.globalAlpha = .4; ctx.fillRect(land ? cx : cx - u * .25, ly, u * .5, 1); ctx.globalAlpha = 1;
     ly += u * .32;
     ctx.font = `italic 400 ${u * .27 * long}px ${SE}`;
@@ -1178,13 +1179,13 @@
     ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.font = `italic 400 84px ${SE}`; ctx.fillText(v.en, W / 2, 200);
     ctx.font = `600 32px ${SC}`; spaced(ctx, v.cn, W / 2, 252, 14, 'center');
     let cw, ch;
-    if (v.land) { cw = 920; ch = cw * 250 / 386; } else { cw = 640; ch = cw * 386 / 250; }
-    const cx = (W - cw) / 2, cy = v.land ? 380 : 300;
+    if (v.land) { cw = 920; ch = cw * 250 / 386; } else { cw = 580; ch = cw * 386 / 250; }
+    const cx = (W - cw) / 2, cy = v.land ? 400 : 310;
     ctx.save(); ctx.shadowColor = dark ? 'rgba(160,140,255,.45)' : 'rgba(120,80,150,.28)'; ctx.shadowBlur = 60; ctx.shadowOffsetY = 20;
     ctx.fillStyle = '#fff'; rr(ctx, cx, cy, cw, ch, cw * .045); ctx.fill(); ctx.restore();
     await drawCardTo(ctx, cx, cy, cw, ch, vid, w, imgs);
     ctx.textAlign = 'center'; ctx.fillStyle = sub; ctx.font = `400 26px ${SA}`;
-    const by = cy + ch + 70;
+    const by = cy + ch + 74;
     ctx.fillText(v.rank >= 3 ? `概率 ${fmtP(t.rate / t.v.length)} 的${t.cn}，被我抽到了` : '今天也抽到了一张卡', W / 2, by);
     ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('单词手账 · 高考核心 688 词', W / 2, H - 70);
     return cv;
@@ -1312,6 +1313,6 @@
     $('#boot').hidden = true; $('#app').hidden = false;
     show('home');
   }
-  window.__danci = { get S() { return S; }, rates, multOf, drawOne, WORDS }; // 自检用
+  window.__danci = { get S() { return S; }, rates, multOf, drawOne, WORDS, cardPoster, resultPoster, show, revealOne, setLast(R) { LAST = R; show('result'); renderResult(); } }; // 自检用
   boot();
 })();

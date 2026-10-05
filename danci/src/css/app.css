@@ -287,7 +287,7 @@ img{max-width:100%;display:block}
 .ov{position:fixed;left:0;top:0;right:0;bottom:0;z-index:40;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .ov.dark{background:#15121C}
 .ov.bg-reveal{background:#15121C url(../img/bg/reveal.webp) center/cover}
-#viewer.ov{background:rgba(16,12,26,.94)}
+#viewer.ov{background:#120F1A url(../img/bg/reveal.webp) center/cover}
 .ov .dust{position:fixed;left:0;top:0;right:0;bottom:0;background:url(../img/tex/stars-near.webp) 0 0/260px;mix-blend-mode:screen;opacity:.8;pointer-events:none}
 .cf{position:fixed;left:0;top:0;width:100%;height:100%;z-index:3;pointer-events:none}
 .rv,.vw{position:relative;z-index:2;max-width:480px;margin:0 auto;padding:16px 20px 30px;padding-top:calc(16px + var(--safe-t));min-height:100%;text-align:center;color:#fff}
@@ -377,6 +377,7 @@ img{max-width:100%;display:block}
 .holo-card .cf-ov.land .cf-line .cf-rule{margin:0 0 .32em}
 .holo-card .cf-ov.land .cf-foot{left:auto;right:5.2%;bottom:7%;width:30%}
 .holo-card .cf-ov.land .cf-charm{right:7%;top:20%;bottom:auto;width:1.85em}
+.holo-card.has-art .cf-ov.land .cf-charm{right:5%;top:9%;width:.95em}
 .holo-card .cf-ov.land .cf-frame{left:2.8%;right:2.8%;top:4.2%;bottom:4.2%}
 .holo-card.v-x2 .cf-ov{color:#3B3560}
 .holo-card.v-x2 .cf-w{background:linear-gradient(180deg,#5D58A0 0%,#2E2A5A 60%,#7A70C0 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
