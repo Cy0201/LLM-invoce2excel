@@ -46,46 +46,91 @@ def catalog_slots():
     return info
 
 
+# 每格的取景：crop 为格子内的相对范围 (x0, y0, x1, y1)；
+# box 为放进卡面的相对区域 (x0, y0, x1, y1)，按比例缩放后在 box 内靠 align 对齐。
+# 竖版卡把画面放在上半部分（下方是例句区，卡面会渐隐）；横版卡人物放右侧，左边留给单词和例句。
+FRAMING = {
+    'ur1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
+    'ur2': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
+    'lr1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
+    'lr2': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
+    'x1': {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, .72), 'align': 'top'},
+    'x2': {'crop': (.14, 0, 1, 1), 'box': (.56, 0, 1, 1), 'align': 'right'},
+}
+
+
+def detect_panels(gray, cols, rows):
+    """找出拼图里带黑框的格子；找不到边框时按网格均分"""
+    W, H = gray.size
+    px = gray.load()
+    step = 2
+
+    def dark_ratio_col(x):
+        return sum(1 for y in range(0, H, step) if px[x, y] < 110) / (H / step)
+
+    def dark_ratio_row(y):
+        return sum(1 for x in range(0, W, step) if px[x, y] < 110) / (W / step)
+
+    def runs(idx):
+        out = []
+        for i in idx:
+            if out and i <= out[-1][1] + 2:
+                out[-1][1] = i
+            else:
+                out.append([i, i])
+        return out
+    vx = runs([x for x in range(W) if dark_ratio_col(x) > .3])
+    hy = runs([y for y in range(H) if dark_ratio_row(y) > .45])
+    if len(vx) == cols * 2 and len(hy) >= rows * 2 - 1:
+        xs = [(vx[2 * i][1] + 1, vx[2 * i + 1][0] - 1) for i in range(cols)]
+        ys = []
+        for r in range(rows):
+            top = hy[2 * r][1] + 1
+            bottom = hy[2 * r + 1][0] - 1 if 2 * r + 1 < len(hy) else H - 1  # 底边被裁掉时用图片下沿
+            ys.append((top, bottom))
+        log('线稿：识别到 %d×%d 个带边框的格子' % (cols, rows))
+        return [(x0, y0, x1, y1) for (y0, y1) in ys for (x0, x1) in xs]
+    log('线稿：没识别到边框，按网格均分')
+    cw, ch = W / cols, H / rows
+    return [(int(c * cw), int(r * ch), int((c + 1) * cw), int((r + 1) * ch)) for r in range(rows) for c in range(cols)]
+
+
 def process_lineart(sheet, grid, order):
     from PIL import Image, ImageOps
     cols, rows = [int(x) for x in grid.lower().split('x')]
     slots = catalog_slots()
     im = Image.open(sheet).convert('L')
-    W, H = im.size
-    cw, ch = W / cols, H / rows
+    panels = detect_panels(im, cols, rows)
     out_dir = os.path.join(SRC, 'lineart')
     os.makedirs(out_dir, exist_ok=True)
     mapping = {}
     for idx, vid in enumerate(order):
-        if idx >= cols * rows:
+        if idx >= len(panels):
             break
-        c, r = idx % cols, idx // cols
-        inset = 0.015
-        box = (int(c * cw + cw * inset), int(r * ch + ch * inset), int((c + 1) * cw - cw * inset), int((r + 1) * ch - ch * inset))
-        cell = im.crop(box)
+        x0, y0, x1, y1 = panels[idx]
+        pad = 7  # 避开边框残留
+        cell = im.crop((x0 + pad, y0 + pad, x1 - pad, y1 - pad))
         info = slots.get(vid, {'ink': '#3B3570', 'land': False})
-        # 线条 → 透明度：越黑越不透明；纸色、浅灰噪点变透明
-        gray = ImageOps.autocontrast(cell, cutoff=1)
-        alpha = gray.point(lambda g: max(0, min(255, int((238 - g) * 255 / 170))))
-        if info['land']:
-            # 横版卡：人物放在右侧，左边留给单词和例句
-            tw, th = LANDSCAPE
-            scale = th / alpha.height
-            a = alpha.resize((max(1, int(alpha.width * scale)), th), Image.LANCZOS)
-            canvas = Image.new('L', (tw, th), 0)
-            canvas.paste(a, (tw - a.width - int(tw * 0.02), 0))
-            alpha = canvas
-        else:
-            tw, th = PORTRAIT
-            scale = max(tw / alpha.width, th / alpha.height)
-            a = alpha.resize((max(tw, int(alpha.width * scale + .5)), max(th, int(alpha.height * scale + .5))), Image.LANCZOS)
-            left = (a.width - tw) // 2
-            alpha = a.crop((left, 0, left + tw, th))  # 顶部对齐，保住头部
-        rgb = Image.new('RGB', alpha.size, info['ink'])
-        rgba = rgb.copy()
-        rgba.putalpha(alpha)
+        fr = FRAMING.get(vid, {'crop': (0, 0, 1, 1), 'box': (0, 0, 1, 1), 'align': 'top'})
+        cw_, ch_ = cell.size
+        c = fr['crop']
+        cell = cell.crop((int(c[0] * cw_), int(c[1] * ch_), int(c[2] * cw_), int(c[3] * ch_)))
+        # 线条 → 透明度：只保留较深的线芯，让线更细更干净；浅灰杂点、AI 出图的淡色残影都去掉
+        gray = ImageOps.autocontrast(cell, cutoff=.5)
+        alpha = gray.point(lambda g: 0 if g > 200 else min(255, int(((200 - g) / 150) ** .85 * 255)))
+        tw, th = LANDSCAPE if info['land'] else PORTRAIT
+        b = fr['box']
+        bw, bh = (b[2] - b[0]) * tw, (b[3] - b[1]) * th
+        scale = min(bw / alpha.width, bh / alpha.height)
+        a = alpha.resize((max(1, int(alpha.width * scale)), max(1, int(alpha.height * scale))), Image.LANCZOS)
+        ox = b[0] * tw + ((bw - a.width) if fr['align'] == 'right' else (bw - a.width) / 2)
+        oy = b[1] * th
+        canvas = Image.new('L', (tw, th), 0)
+        canvas.paste(a, (int(ox), int(oy)))
+        rgba = Image.new('RGB', (tw, th), info['ink'])
+        rgba.putalpha(canvas)
         path = os.path.join(out_dir, vid + '.webp')
-        rgba.save(path, 'WEBP', quality=86, method=6)
+        rgba.save(path, 'WEBP', quality=88, method=6)
         mapping[vid] = 'lineart/' + vid + '.webp'
         log('线稿', vid, '→', os.path.relpath(path, ROOT), os.path.getsize(path), 'bytes')
     with open(os.path.join(SRC, 'js', 'lineart.js'), 'w', encoding='utf-8') as f:

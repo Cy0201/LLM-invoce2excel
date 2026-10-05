@@ -377,7 +377,7 @@ img{max-width:100%;display:block}
 .holo-card .cf-ov.land .cf-line .cf-rule{margin:0 0 .32em}
 .holo-card .cf-ov.land .cf-foot{left:auto;right:5.2%;bottom:7%;width:30%}
 .holo-card .cf-ov.land .cf-charm{right:7%;top:20%;bottom:auto;width:1.85em}
-.holo-card.has-art .cf-ov.land .cf-charm{right:5%;top:9%;width:.95em}
+.holo-card.has-art.is-land .cf-charm{display:none}
 .holo-card .cf-ov.land .cf-frame{left:2.8%;right:2.8%;top:4.2%;bottom:4.2%}
 .holo-card.v-x2 .cf-ov{color:#3B3560}
 .holo-card.v-x2 .cf-w{background:linear-gradient(180deg,#5D58A0 0%,#2E2A5A 60%,#7A70C0 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
