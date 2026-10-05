@@ -39,7 +39,7 @@
     ov.innerHTML = overlayHTML(v, w, top);
     var layers;
     if (art) {
-      layers = [{ image: art, className: 'cf-art cf-art-' + vid, opacity: v.lt ? .5 : .55, parallax: 6, size: 'cover', position: land ? 'right center' : 'center top' }];
+      layers = [{ image: art, className: 'cf-art cf-art-' + vid, opacity: v.artOp || (v.lt ? .5 : .55), parallax: 6, size: 'cover', position: land ? 'right center' : 'center top' }];
     }
     var pal = v.pal || (v.eff === 'holo' || v.eff === 'reverse' || v.eff === 'radiant' ? C.PASTEL : undefined);
     var card = HoloKit.createHoloCard({
@@ -53,7 +53,12 @@
     var el = card.element;
     el.classList.add('t-' + v.tier, 'v-' + vid, 'hc');
     if (land) el.classList.add('is-land');
-    if (art) el.classList.add('has-art');
+    if (art) {
+      el.classList.add('has-art');
+      // 直接写在元素上：CSS 变量里的 url() 会按样式表目录解析，路径会错
+      var layer = el.querySelector('.cf-art');
+      if (layer) layer.style.backgroundImage = 'url("' + art + '")';
+    }
     if (!opt.interactive || REDUCE) el.classList.add('lit');
     return { el: el, card: card };
   }
