@@ -3,3 +3,5 @@ tools/.render/
 dist/
 *.pyc
 tools/.shots/
+!单词手账.zip
+!tools/vendor/cards-css/dist/
