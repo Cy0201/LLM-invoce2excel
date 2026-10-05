@@ -51,15 +51,15 @@ def catalog_slots():
 # focus —— 焦点椭圆 (cx, cy, rx, ry)，相对格子；椭圆内保留，向外渐隐
 # box   —— 放进卡面的区域 (x0, y0, x1, y1)，相对卡面；align 为对齐方式
 # tone  —— dark：浅色卡用深墨；light：深色卡用浅墨
-INK = {'dark': '#3C3159', 'light': '#FFF4E2'}
+INK = {'dark': '#3C3159', 'light': '#FFF4E2', 'mid': '#8576BC'}  # mid：一种柔和的薰衣草灰，深浅卡面上都淡淡可见
 LINE_W = 2.2  # 统一线宽（卡面 600px 宽时）
 FRAMING = {
-    'ur1': {'crop': (0, 0, 1, 1), 'focus': (.44, .47, .34, .27), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
-    'ur2': {'crop': (0, 0, 1, 1), 'focus': (.66, .5, .36, .32), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'dark'},
-    'lr1': {'crop': (0, 0, 1, 1), 'focus': (.62, .36, .34, .36), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
+    'ur1': {'skip': True},  # UR 不放线稿
+    'ur2': {'skip': True},
+    'lr1': {'crop': (0, 0, 1, 1), 'focus': (.62, .36, .34, .36), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'mid'},
     'lr2': {'skip': True},  # 晚霞心动（礼物）不放线稿
-    'x1': {'crop': (0, 0, 1, 1), 'focus': (.52, .46, .36, .4), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'light'},
-    'x2': {'crop': (.12, 0, 1, 1), 'focus': (.42, .4, .3, .4), 'box': (.56, 0, 1, 1), 'align': 'right', 'tone': 'dark'},
+    'x1': {'crop': (0, 0, 1, 1), 'focus': (.52, .46, .36, .4), 'box': (0, 0, 1, .7), 'align': 'top', 'tone': 'mid'},
+    'x2': {'crop': (.12, 0, 1, 1), 'focus': (.42, .4, .3, .4), 'box': (.56, 0, 1, 1), 'align': 'right', 'tone': 'mid'},
 }
 
 
@@ -292,9 +292,15 @@ def referenced_ok():
             for m in re.finditer(r"'(img/(?:art|bg|charm|icon3d)/)' \+", text):
                 pass
     # 运行时拼出来的路径
-    for vid in re.findall(r"id: '(\w+)'", open(os.path.join(DIST, 'js', 'catalog.js'), encoding='utf-8').read()):
+    for vid in re.findall(r"id: '(\w+)', en: ", open(os.path.join(DIST, 'js', 'catalog.js'), encoding='utf-8').read()):
         if not os.path.exists(os.path.join(DIST, 'img', 'art', vid + '.webp')):
             bad.append(('catalog', 'img/art/' + vid + '.webp'))
+    cat = open(os.path.join(DIST, 'js', 'catalog.js'), encoding='utf-8').read()
+    seals = re.findall(r"\{ id: '(\w+)', cn: '[^']+' \}", cat)
+    for sid in seals:
+        if not os.path.exists(os.path.join(DIST, 'img', 'seal', sid + '.webp')):
+            bad.append(('seal', sid))
+    log('邮戳 %d 枚' % len(seals))
     for k in ['home', 'quiz', 'result', 'album', 'reveal', 'gallery', 'test', 'sky', 'dusk', 'night']:
         if not os.path.exists(os.path.join(DIST, 'img', 'bg', k + '.webp')):
             bad.append(('bg', k))

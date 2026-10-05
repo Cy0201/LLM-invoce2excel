@@ -42,6 +42,10 @@
     if (!st.prog || typeof st.prog !== 'object') st.prog = {};
     if (!Array.isArray(st.days)) st.days = [];
     if (!(st.cur >= 0 && st.cur < NG)) st.cur = 0;
+    Object.keys(st.cards).forEach(k => {
+      const o = st.cards[k] || {};
+      Object.keys(o).forEach(id => { if (typeof o[id] === 'number') o[id] = { n: o[id], s: { star: o[id] } }; else if (!o[id] || !o[id].s) o[id] = { n: (o[id] && o[id].n) || 1, s: { star: 1 } }; });
+    });
     return st;
   }
   let S = normalize(null);
@@ -98,7 +102,7 @@
         let ok = false;
         try { if (await useContainer()) { await miniTool().setStorage({ key: KEY, data: str }); ok = true; } } catch (e) { ok = false; }
         if (!ok) ok = lsSet(KEY, str);
-        if (!ok && !flush.warned) { flush.warned = true; toast('存档没有保存成功，请检查存储空间'); }
+        if (!ok && !flush.warned) { flush.warned = true; toast('保存失败'); }
       } while (again);
     } finally { saving = false; }
   }
@@ -179,6 +183,18 @@
     for (let i = tiers.length - 1; i >= 0; i--) { x -= r[tiers[i]]; if (x < 0) return tiers[i]; }
     return tiers[0];
   }
+  const SEAL = C.SEAL, SEAL_TIERS = C.SEAL_TIERS;
+  function rollSeal() {
+    let x = Math.random() * 100;
+    for (let i = SEAL_TIERS.length - 1; i >= 0; i--) { x -= SEAL_TIERS[i].rate; if (x < 0) return pick(SEAL_TIERS[i].v).id; }
+    return pick(SEAL_TIERS[0].v).id;
+  }
+  const ownSeals = (k, vid) => { const o = S.cards[k] && S.cards[k][vid]; return o ? Object.keys(o.s) : []; };
+  function bestSeal(k, vid) {
+    let b = null; ownSeals(k, vid).forEach(id => { if (SEAL[id] && (!b || SEAL[id].rank > SEAL[b].rank)) b = id; });
+    return b;
+  }
+  function sealsOwned() { const o = {}; Object.keys(S.cards).forEach(k => Object.keys(S.cards[k]).forEach(v => Object.keys(S.cards[k][v].s).forEach(id => { o[id] = 1; }))); return o; }
   const ownVids = k => Object.keys(S.cards[k] || {});
   function bestVid(k) {
     let best = null;
@@ -207,14 +223,17 @@
     S.pity.ssr = rank >= 3 ? 0 : S.pity.ssr + 1;
     S.pity.ur = rank >= 4 ? 0 : S.pity.ur + 1;
     const t = TIER[tier], v = pick(t.v), w = pickWord(v.id);
+    const seal = rollSeal();
     const own = S.cards[w.k] || (S.cards[w.k] = {});
-    const dup = !!own[v.id];
-    own[v.id] = (own[v.id] || 0) + 1;
+    const e = own[v.id] || (own[v.id] = { n: 0, s: {} });
+    const newCard = !e.n, newSeal = !e.s[seal];
+    const dup = !newCard && !newSeal;   // 单词、卡面、邮戳都一样才算重复
+    e.n++; e.s[seal] = (e.s[seal] || 0) + 1;
     const dust = dup ? t.dust : 0;
     S.dust += dust;
     S.stat.draws++;
     const p = rates(m)[tier] / t.v.length;
-    return { k: w.k, vid: v.id, tier, rank, dup, dust, m, p, pity: pity && rank <= ORDER.indexOf(pity) ? pity : '' };
+    return { k: w.k, vid: v.id, tier, rank, dup, dust, m, p, seal, sp: SEAL[seal].p, srank: SEAL[seal].rank, newCard, newSeal, pity: pity && rank <= ORDER.indexOf(pity) ? pity : '' };
   }
   function tierOwned(tier) { let n = 0; Object.keys(S.cards).forEach(k => { Object.keys(S.cards[k]).forEach(id => { if (C.BY_ID[id] && C.BY_ID[id].tier === tier) n++; }); }); return n; }
   function variantOwners(vid) { return Object.keys(S.cards).filter(k => S.cards[k][vid]).map(Number); }
@@ -373,7 +392,7 @@
     $('#hQuote').innerHTML = `<div class="q-w">TODAY · ${esc(tw.w.toUpperCase())}</div><em>${esc(tw.en)}</em><span>${esc(tw.cn)}${tw.src ? ' <small>— ' + esc(tw.src) + '</small>' : ''}</span>`;
     $('#hQuote').dataset.k = tw.k;
     const g = S.cur, ws = groupWords(g), mm = masteredIn(g);
-    $('#hCont').innerHTML = `<img class="charm" src="img/charm/c_star.webp" alt="">
+    $('#hCont').innerHTML = `<img class="charm" src="img/seal/star.webp" alt="">
       <div class="no">NO. ${pad3(ws[0].i)} – ${pad3(ws[ws.length - 1].i)}</div><h2>第 ${g + 1} 组</h2>
       <div class="ws">${ws.slice(0, 4).map(w => esc(w.w)).join(', ')}…</div>
       <div class="pg"><em><i style="width:${Math.round(mm / ws.length * 100)}%"></i></em><span><b>${mm}</b> / ${ws.length} 已掌握</span></div>
@@ -400,7 +419,7 @@
     [three[0], three[1], three[2]].forEach((c, i) => {
       const box = document.createElement('div'); box.className = 'fan-c';
       box.style.cssText = `left:${pos[i][0]}px;top:${pos[i][1]}px;transform:rotate(${pos[i][2]}deg)`;
-      box.appendChild(CardKit.mini(c.id, WORDS[c.k], { charm: false }));
+      box.appendChild(CardKit.mini(c.id, WORDS[c.k], {}));
       fan.appendChild(box);
     });
   }
@@ -413,10 +432,10 @@
   $('#hQuote').addEventListener('click', () => { const k = +$('#hQuote').dataset.k; speak(WORDS[k].w); openWord(k); });
   $('#hTest').addEventListener('click', e => { if (e.target.closest('[data-act]')) return; startTest(); });
   $('#hTest').addEventListener('keydown', e => { if (e.key === 'Enter') startTest(); });
-  $('#hStreak').addEventListener('click', () => toast(S.today.d === dayKey() && S.today.n ? `今天已答 ${S.today.n} 题，连续 ${streak()} 天` : '今天练一轮，就能续上打卡'));
+  $('#hStreak').addEventListener('click', () => toast(S.today.d === dayKey() && S.today.n ? `今天已答 ${S.today.n} 题` : '今天还没练'));
 
   function openGroups() {
-    let h = '<h3 class="sh-h">选择分组<span>每组 20 词 · 按考频排序</span></h3><div class="grps">';
+    let h = '<h3 class="sh-h">选择分组</h3><div class="grps">';
     for (let g = 0; g < NG; g++) {
       const ws = groupWords(g), mm = masteredIn(g), col = ws.filter(w => S.cards[w.k] && ownVids(w.k).length).length;
       h += `<button type="button" class="g${g === S.cur ? ' on' : ''}" data-g="${g}"><b>${pad2(g + 1)}</b><span>${ws[0].i}–${ws[ws.length - 1].i}</span><em><i style="width:${mm / ws.length * 100}%"></i></em>${col ? `<small>${icon('i-cards-d')}${col}</small>` : ''}</button>`;
@@ -441,7 +460,6 @@
       <div class="setr"><span>答对自动跳</span><span data-sw="next">${sw(st.next)}</span></div>
       <div class="setr"><span>答题音效</span><span data-sw="sound">${sw(st.sound)}</span></div>
       <div class="setr"><span>单词发音</span><button type="button" class="btn soft sm" id="stVoice">${icon('i-speaker-high')}试听</button></div>
-      <div class="setr col"><span>关于抽卡</span><p class="hint">答题赚抽卡券：全部测试每答对 1 题得 1 张，正确率越高额外奖励越多，并提升 SSR 及以上概率；分组练习每答对 2 题得 1 张（基础概率）。</p></div>
       <div class="setr danger"><button type="button" class="btn ghostd sm" id="stReset">清空学习记录</button><button type="button" class="btn ghostd sm" id="stResetAll">重置全部（含卡册）</button></div>`;
     openSheet(h, root => {
       bindSeg(root, 'count', v => { S.set.count = +v; save(); });
@@ -451,9 +469,9 @@
         x.querySelector('.sw').setAttribute('aria-checked', String(S.set[key]));
       }));
       root.querySelector('#stVoice').addEventListener('click', () => speak(todayWord().w));
-      root.querySelector('#stReset').addEventListener('click', () => modal('清空学习记录？', '已掌握、错词本和打卡天数会清零，卡册和抽卡券保留。这一步无法撤销。', [
+      root.querySelector('#stReset').addEventListener('click', () => modal('清空学习记录？', '卡册和抽卡券会保留。', [
         { label: '先不清空' }, { label: '确认清空', cls: 'warn', fn: () => { S.prog = {}; S.days = []; S.today = { d: '', n: 0 }; save(); closeSheet(); renderHome(); toast('学习记录已清空'); } }]));
-      root.querySelector('#stResetAll').addEventListener('click', () => modal('重置全部数据？', '学习记录、卡册、抽卡券和星尘都会清空。这一步无法撤销。', [
+      root.querySelector('#stResetAll').addEventListener('click', () => modal('重置全部数据？', '卡册和抽卡券也会清空，无法撤销。', [
         { label: '先不重置' }, { label: '全部重置', cls: 'warn', fn: () => { S = normalize(null); S.welcome = true; save(); closeSheet(); renderHome(); toast('已重置'); } }]));
     });
   }
@@ -479,7 +497,7 @@
   }
   function startWrong() {
     const ws = wrongWords();
-    if (!ws.length) { toast('错词本是空的，继续保持'); return; }
+    if (!ws.length) { toast('错词本是空的'); return; }
     begin({ kind: 'wrong', label: '错词本', mode: 'mix', pool: shuffle(ws).slice(0, 20) });
   }
   function startTest() {
@@ -551,8 +569,8 @@
     } else if (it.type === 'spell' || it.type === 'listen') {
       const L = w.w.length, bl = blankSentence(w);
       const head = it.type === 'spell'
-        ? `<div class="qc gl in">${tag}<div class="qcn"><i>${esc(w.cp)}</i>${esc(w.cm)}</div>${bl ? `<div class="qbl">${esc(bl)}</div>` : ''}<div class="qhint">${L} 个字母 · 点横线开始输入</div></div>`
-        : `<div class="qc gl in">${tag}<button type="button" class="listen" data-say aria-label="再听一遍">${icon('i-headphones-d')}</button><div class="qhint">点耳机可以反复听 · ${L} 个字母</div></div>`;
+        ? `<div class="qc gl in">${tag}<div class="qcn"><i>${esc(w.cp)}</i>${esc(w.cm)}</div>${bl ? `<div class="qbl">${esc(bl)}</div>` : ''}<div class="qhint">${L} 个字母</div></div>`
+        : `<div class="qc gl in">${tag}<button type="button" class="listen" data-say aria-label="再听一遍">${icon('i-headphones-d')}</button><div class="qhint">${L} 个字母</div></div>`;
       stage.innerHTML = head + `<div class="spell">
         <div class="slots" id="slots">${'<span class="slot"></span>'.repeat(L)}<input id="spIn" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="${Math.max.apply(null, answers(w).map(a => a.length))}" aria-label="输入单词"></div>
         <div class="sp-acts" id="spActs">
@@ -578,7 +596,7 @@
       if (it.type === 'listen') setTimeout(sayListen, 260);
     } else if (it.type === 'flash') {
       stage.innerHTML = `<div class="flip" id="flip"><div class="flip-in">
-          <div class="qc gl face">${spk}${tag}<div class="qw">${esc(w.w)}</div><div class="ipa">${esc(w.p)}</div><div class="qhint">先在心里想一想，再点卡片翻面</div></div>
+          <div class="qc gl face">${spk}${tag}<div class="qw">${esc(w.w)}</div><div class="ipa">${esc(w.p)}</div></div>
           <div class="qc gl face back">${spk}${tag}<div class="qw sm">${esc(w.w)}</div><div class="qcn"><i>${esc(w.cp)}</i>${esc(w.cm)}</div>
             <div class="qline"><em>${esc(w.en)}</em><span>${esc(w.cn)}</span></div></div>
         </div></div>
@@ -617,7 +635,7 @@
     const fb = $('#qFb');
     const last = Q.i + 1 >= Q.items.length;
     fb.className = 'fb gl-solid ' + (ok ? 'good' : 'bad');
-    fb.innerHTML = `<div class="fb-h">${icon(ok ? 'i-check-circle-f' : 'i-x-circle-f')}${ok ? pick(['答对了', '漂亮', '稳稳的', '就是它', '好记性']) : '记一下这个'}</div>
+    fb.innerHTML = `<div class="fb-h">${icon(ok ? 'i-check-circle-f' : 'i-x-circle-f')}${ok ? '答对了' : '答错了'}</div>
       <div class="fb-w"><b>${esc(w.w)}</b><span class="ipa">${esc(w.p)}</span><button type="button" class="spk sm gl" data-say2 aria-label="朗读">${icon('i-speaker-high')}</button></div>
       ${extra || ''}
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
@@ -649,7 +667,7 @@
     $('#spActs').hidden = true;
     settle(ok, it, { hint: it.hint > 0 });
     speak(it.w.w);
-    const extra = ok ? (it.hint ? `<div class="fb-n">用了 ${it.hint} 次提示，这次不计入掌握进度</div>` : '') : `<div class="fb-n">你写的是 <s>${esc(v)}</s></div>`;
+    const extra = ok ? (it.hint ? `<div class="fb-n">用了提示，不计入掌握</div>` : '') : `<div class="fb-n">你写的是 <s>${esc(v)}</s></div>`;
     feedback(ok, it.w, extra);
     if (ok && S.set.next && !it.hint) Q.auto = setTimeout(next, 1400);
   }
@@ -668,7 +686,7 @@
     Q.i++; renderQ(); window.scrollTo(0, 0);
   }
   $('#qQuit').addEventListener('click', () => {
-    modal('结束这一轮？', Q.answered ? `已经答了 ${Q.answered} 题，记录都已保存，本轮的抽卡券照常结算。` : '这一轮还没有答题。', [
+    modal('结束这一轮？', Q.answered ? `已答 ${Q.answered} 题，照常结算。` : '还没有答题。', [
       { label: '继续答题' },
       { label: Q.answered ? '结束并结算' : '回到首页', cls: 'dark', fn: () => { clearTimeout(Q.auto); stopAll(); if (Q.answered) { Q.items = Q.items.slice(0, Q.answered); finish(); } else show('home'); } }]);
   });
@@ -716,19 +734,19 @@
   const RULE_HTML = '正确率 <b>60%</b> 以上 ×1.2 · <b>80%</b> 以上 ×1.5 · <b>90%</b> 以上 ×2 · <b>全对</b> ×3，隐藏款也 ×3<br>十连必出 SR 以上 · 60 抽必出 SSR 以上 · 150 抽必出 UR 以上';
   function renderResult() {
     const R = LAST, body = $('#rBody');
-    const wl = R.wrongs.length ? `<div class="wl gl"><h4>${icon('i-lightbulb')}这一轮要再看看的词</h4>${R.wrongs.map(w => `<button type="button" class="wr" data-k="${w.k}"><b>${esc(w.w)}</b><span>${esc(short(w))}</span></button>`).join('')}</div>` : '';
+    const wl = R.wrongs.length ? `<div class="wl gl"><h4>${icon('i-lightbulb')}错词</h4>${R.wrongs.map(w => `<button type="button" class="wr" data-k="${w.k}"><b>${esc(w.w)}</b><span>${esc(short(w))}</span></button>`).join('')}</div>` : '';
     if (R.kind === 'test') {
-      body.innerHTML = `<div class="rh"><div class="k">全部测试 · 本轮成绩</div><div class="sc">${R.right}<small>/ ${R.total}</small></div>
+      body.innerHTML = `<div class="rh"><div class="k">全部测试</div><div class="sc">${R.right}<small>/ ${R.total}</small></div>
           <div class="acc">${icon('i-sparkle-f')}正确率 ${R.pct}%${R.m > 1 ? ` · SSR 及以上概率 ${fmtM(R.m)}` : ' · 基础概率'}</div></div>
-        <div class="ladder gl"><h4>本轮获得的 ${R.gain} 张抽卡券<span>${R.m > 1 ? '灰色为基础概率' : '答对 60% 以上可提升概率'}</span></h4>${ladderHTML(R.m)}</div>
-        <div class="rule">答对 ${R.right} 题得 ${R.right} 张${R.bonus ? `，正确率奖励 +${R.bonus} 张` : ''}<br>${RULE_HTML}</div>
+        <div class="ladder gl"><h4>获得 ${R.gain} 张抽卡券<span>${R.m > 1 ? '灰色为原概率' : ''}</span></h4>${ladderHTML(R.m)}</div>
+        <div class="rule">${RULE_HTML}</div>
         ${wl}
         <div class="ra"><button type="button" class="btn soft" id="rShare">${icon('i-share-network')}晒成绩</button><button type="button" class="btn holo" data-act="draw">去抽卡 · ${ticketCount()} 张${icon('i-arrow-right')}</button></div>
         <button type="button" class="link" data-act="home">回到首页</button>`;
     } else {
       body.innerHTML = `<div class="rh"><div class="k">${esc(R.label)} · ${TYPE_NAME[R.mode] || ''} · 本轮成绩</div><div class="sc">${R.right}<small>/ ${R.total}</small></div>
           <div class="kv gl"><div><b>${R.pct}%</b><span>正确率</span></div><div><b>${R.best}</b><span>最长连对</span></div><div><b>${R.newM}</b><span>新掌握</span></div><div><b>${R.time}</b><span>用时</span></div></div></div>
-        <div class="gain gl">${R.gain ? `<img src="img/icon3d/ticket.webp" alt=""><div><b>获得抽卡券 ×${R.gain}</b><span>分组练习每答对 2 题得 1 张 · 基础概率</span></div>` : `<img src="img/icon3d/cards.webp" alt=""><div><b>${R.mode === 'flash' ? '闪卡模式不发抽卡券' : '这轮还没攒到抽卡券'}</b><span>去「全部测试」，正确率越高，抽卡概率越高</span></div>`}</div>
+        <div class="gain gl">${R.gain ? `<img src="img/icon3d/ticket.webp" alt=""><div><b>抽卡券 ×${R.gain}</b></div>` : `<img src="img/icon3d/cards.webp" alt=""><div><b>${R.mode === 'flash' ? '闪卡不计抽卡券' : '这轮没有抽卡券'}</b></div>`}</div>
         ${wl}
         <div class="ra">
           ${R.wrongs.length ? `<button type="button" class="btn soft" id="rRedo">${icon('i-arrow-counter-clockwise')}重练错词</button>` : `<button type="button" class="btn soft" id="rAgain">${icon('i-shuffle')}再来一轮</button>`}
@@ -750,9 +768,9 @@
       <div class="rtop"><button type="button" class="cl" data-act="back" aria-label="返回">${icon('i-x')}</button><div class="tkt">${icon('i-ticket-f')}抽卡券<b>${n}</b></div></div>
       <div class="dt"><div class="r">TIRAGE · 抽卡</div><div class="f">Les cartes</div></div>
       <div class="pack${n ? '' : ' empty'}" id="dPack"><i class="pack-glow"></i><img src="img/pack.webp" alt="卡包"></div>
-      <div class="dinfo">${n ? (b.m > 1 ? `正在使用 <b>${fmtM(b.m)}</b> 加成券 · SSR 及以上概率提升` : '正在使用 <b>基础概率</b> 抽卡券') : '还没有抽卡券'}<br>
-        <span>距保底：SR ${toSR} 抽 · SSR ${toSSR} 抽 · UR ${toUR} 抽</span></div>
-      <div class="dacts">${n ? `<button type="button" class="btn ghost" id="dOne">单抽 · 1 张</button><button type="button" class="btn holo" id="dTen"${n < 10 ? ' disabled' : ''}>十连 · 10 张</button>` : `<button type="button" class="btn holo wide" data-act="test">去全部测试，赚抽卡券${icon('i-arrow-right')}</button>`}</div>
+      <div class="dinfo">${n ? (b.m > 1 ? `<b>${fmtM(b.m)}</b> 加成券` : '基础概率') : '没有抽卡券'}<br>
+        <span>保底 SR ${toSR} · SSR ${toSSR} · UR ${toUR}</span></div>
+      <div class="dacts">${n ? `<button type="button" class="btn ghost" id="dOne">单抽 · 1 张</button><button type="button" class="btn holo" id="dTen"${n < 10 ? ' disabled' : ''}>十连 · 10 张</button>` : `<button type="button" class="btn holo wide" data-act="test">去全部测试${icon('i-arrow-right')}</button>`}</div>
       <div class="dlinks">
         <button type="button" data-act="odds">${icon('i-chart-bar')}概率与保底</button>
         <button type="button" data-act="dust"><img src="img/icon3d/stardust.webp" alt="">星尘 ${S.dust}</button>
@@ -773,12 +791,14 @@
     const b = bestBatch(), m = b ? b.m : 1;
     openSheet(`<h3 class="sh-h">概率与保底<span>${m > 1 ? '当前使用 ' + fmtM(m) + ' 加成券' : '当前为基础概率'}</span></h3>
       <div class="ladder plain">${ladderHTML(m)}</div>
-      <div class="rule">${RULE_HTML}<br>重复获得同一张卡会折算成星尘：素笺 1 · 微光 2 · 流光 5 · 星辉 10 · 璀璨 20 · 传说 40 · 隐藏款 80，${DUST_PER_TICKET} 星尘可兑换 1 张抽卡券。<br>单张卡面概率 = 等级概率 ÷ 该等级款式数。抽到的单词来自你练过的词和当前分组。</div>`);
+      <h3 class="sh-h sm">邮戳<span>独立抽取</span></h3>
+      <div class="sealodds">${SEAL_TIERS.slice().reverse().map(t => `<div class="so"><b>${t.cn}</b><span>${t.v.map(x => `<img src="img/seal/${x.id}.webp" alt="">`).join('')}</span><em>${fmtP(t.rate)}</em></div>`).join('')}</div>
+      <div class="rule">${RULE_HTML}<br>重复的卡化为星尘，${DUST_PER_TICKET} 星尘换 1 张抽卡券</div>`);
   }
   function openDust() {
     const can = Math.floor(S.dust / DUST_PER_TICKET);
-    openSheet(`<h3 class="sh-h">星尘<span>重复的卡会化成星尘</span></h3>
-      <div class="dust-box"><img src="img/icon3d/stardust.webp" alt=""><b>${S.dust}</b><span>${DUST_PER_TICKET} 星尘 = 1 张抽卡券（基础概率）</span></div>
+    openSheet(`<h3 class="sh-h">星尘</h3>
+      <div class="dust-box"><img src="img/icon3d/stardust.webp" alt=""><b>${S.dust}</b><span>${DUST_PER_TICKET} 星尘 = 1 张抽卡券</span></div>
       <div class="sh-acts"><button type="button" class="btn soft" id="duOne"${can ? '' : ' disabled'}>兑换 1 张</button><button type="button" class="btn dark" id="duAll"${can ? '' : ' disabled'}>全部兑换 · ${can} 张</button></div>`, root => {
       const ex = k => { if (!k) return; S.dust -= k * DUST_PER_TICKET; addTickets(k, 1); save(); closeSheet(); toast('兑换了 ' + k + ' 张抽卡券'); if (view === 'draw') renderDraw(); if (view === 'album') renderAlbum(); };
       root.querySelector('#duOne').addEventListener('click', () => ex(Math.min(1, can)));
@@ -837,76 +857,84 @@
       <div class="orb"><i></i></div>
       <div class="rl"><div class="r">${r.tier === 'SECRET' ? 'S E C R E T' : r.tier} · ${t.cn}</div><div class="f">${esc(v.en)}</div><div class="c">${esc(v.cn)}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="rvStage"></div>
-      <div class="rinfo">${t.cn} · 概率 ${fmtP(r.p)}${r.pity ? ' · ' + r.pity + ' 保底' : ''}<br>${r.dup ? `重复获得 · 星尘 +${r.dust}` : (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`)}</div>
+      <div class="rinfo">${t.cn} ${fmtP(r.p)} × ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」${fmtP(r.sp)}${r.pity ? ' · ' + r.pity + ' 保底' : ''}<br>
+        ${r.rank >= 3 && r.srank >= 2 ? `组合概率 <b>${fmtP(r.p * r.sp / 100)}</b> · ` : ''}${r.dup ? `重复获得 · 星尘 +${r.dust}` : r.newCard ? (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`) : `新邮戳 · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」`}</div>
       <div class="racts"><button type="button" class="btn ghost" id="rvShare">晒这张卡</button><button type="button" class="btn holo" id="rvOk">${ticketCount() ? '再抽一张' : '收进卡册'}</button></div>`;
     const stage = $('#rvStage');
-    const made = CardKit.make(r.vid, w, { interactive: true, lit: true });
+    const made = CardKit.make(r.vid, w, { interactive: true, lit: true, seal: r.seal });
     stage.appendChild(made.el);
     CardKit.fit(stage, r.vid);
     $('#rvX').addEventListener('click', revealClose);
-    $('#rvShare').addEventListener('click', () => shareCard(r.k, r.vid));
+    $('#rvShare').addEventListener('click', () => shareCard(r.k, r.vid, r.seal));
     $('#rvOk').addEventListener('click', () => { if (ticketCount()) { revealClose(); doDraw(1); } else { revealClose(); show('album'); } });
-    const delay = r.rank >= 4 ? 1500 : r.rank >= 3 ? 1100 : 700;
+    const hype = Math.max(r.rank, r.srank + 2);
+    const delay = hype >= 4 ? 1500 : hype >= 3 ? 1100 : 700;
     setTimeout(() => {
       const ov = $('#reveal'); ov.classList.remove('stage-pre'); ov.classList.add('stage-on');
-      sfxRare(r.rank);
-      if (r.rank >= 3) confettiBurst(r.rank);
+      sfxRare(hype);
+      if (hype >= 3) confettiBurst(hype);
     }, delay);
   }
   function revealTen(list) {
     revealOpen('ten');
-    let best = list[0]; list.forEach(x => { if (x.rank > best.rank) best = x; });
+    const score = x => x.rank * 10 + x.srank;
+    let best = list[0]; list.forEach(x => { if (score(x) > score(best)) best = x; });
     const fresh = list.filter(x => !x.dup).length, dust = list.reduce((a, x) => a + x.dust, 0);
     $('#rvBody').innerHTML = `
       <div class="rtop"><button type="button" class="cl" id="rvX" aria-label="关闭">${icon('i-x')}</button><div class="tkt">${icon('i-ticket-f')}抽卡券<b>${ticketCount()}</b></div></div>
-      <div class="rl"><div class="r">DIX CARTES · 十连</div><div class="f">${esc(C.BY_ID[best.vid].en)}</div><div class="c">本次最佳 · ${best.tier} ${TIER[best.tier].cn}</div></div>
+      <div class="rl"><div class="r">DIX CARTES · 十连</div><div class="f">${esc(C.BY_ID[best.vid].en)}</div><div class="c">本次最佳 · ${best.tier} ${TIER[best.tier].cn} · ${SEAL[best.seal].tcn}</div></div>
       <div class="tgrid" id="tGrid"></div>
-      <div class="rinfo">新卡 <b>${fresh}</b> 张${dust ? ` · 星尘 +${dust}` : ''} · 点卡片看大图</div>
+      <div class="rinfo">新卡 <b>${fresh}</b> 张${dust ? ` · 星尘 +${dust}` : ''}</div>
       <div class="racts"><button type="button" class="btn ghost" id="rvOk">收进卡册</button><button type="button" class="btn holo" id="rvAgain"${ticketCount() >= 10 ? '' : ' disabled'}>再来十连</button></div>`;
     const grid = $('#tGrid');
     list.forEach((r, i) => {
       const cell = document.createElement('button'); cell.type = 'button';
       cell.className = 'tc' + (r === best && r.rank >= 3 ? ' best' : '');
       cell.style.animationDelay = (i * 110) + 'ms';
-      cell.appendChild(CardKit.mini(r.vid, WORDS[r.k], { charm: false }));
+      cell.appendChild(CardKit.mini(r.vid, WORDS[r.k], { seal: r.seal }));
       if (!r.dup) cell.insertAdjacentHTML('beforeend', '<i class="tc-new">NEW</i>');
-      cell.addEventListener('click', () => openViewer(r.k, r.vid));
+      cell.addEventListener('click', () => openViewer(r.k, r.vid, r.seal));
       grid.appendChild(cell);
     });
     $('#rvX').addEventListener('click', revealClose);
     $('#rvOk').addEventListener('click', () => { revealClose(); show('album'); });
     $('#rvAgain').addEventListener('click', () => { revealClose(); doDraw(10); });
-    setTimeout(() => { sfxRare(best.rank); if (best.rank >= 3) confettiBurst(best.rank); }, 1200);
+    const bh = Math.max(best.rank, best.srank + 2);
+    setTimeout(() => { sfxRare(bh); if (bh >= 3) confettiBurst(bh); }, 1200);
   }
 
   /* ================= 卡片详情 ================= */
   let viewerCard = null;
-  function openViewer(k, vid) {
+  function openViewer(k, vid, seal) {
     const w = WORDS[k], owned = ownVids(k);
     if (!vid) vid = bestVid(k);
     if (!vid) return;
+    if (!seal || ownSeals(k, vid).indexOf(seal) < 0) seal = bestSeal(k, vid);
+    const seals = ownSeals(k, vid).sort((a, b) => SEAL[b].rank - SEAL[a].rank);
     const v = C.BY_ID[vid], t = TIER[v.tier];
     const vw = $('#viewer'); vw.hidden = false; vw.className = 'ov dark t-' + v.tier;
     document.documentElement.classList.add('lock');
-    const chips = owned.slice().sort((a, b) => C.BY_ID[b].rank - C.BY_ID[a].rank).map(id => { const x = C.BY_ID[id]; return `<button type="button" class="vchip${id === vid ? ' on' : ''}" data-vid="${id}"><b>${x.tier}</b>${esc(x.cn)}${S.cards[k][id] > 1 ? ' ×' + S.cards[k][id] : ''}</button>`; }).join('');
+    const chips = owned.slice().sort((a, b) => C.BY_ID[b].rank - C.BY_ID[a].rank).map(id => { const x = C.BY_ID[id]; return `<button type="button" class="vchip${id === vid ? ' on' : ''}" data-vid="${id}"><b>${x.tier}</b>${esc(x.cn)}${S.cards[k][id].n > 1 ? ' ×' + S.cards[k][id].n : ''}</button>`; }).join('');
+    const schips = seals.map(id => `<button type="button" class="schip${id === seal ? ' on' : ''}" data-seal="${id}"><img src="img/seal/${id}.webp" alt="">${SEAL[id].tcn}·${esc(SEAL[id].cn)}</button>`).join('');
     $('#vwBody').innerHTML = `
       <div class="rtop"><button type="button" class="cl" id="vwX" aria-label="关闭">${icon('i-x')}</button><div class="tkt">${esc(v.tier)} · ${t.cn}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="vwStage"></div>
       <div class="vinfo"><div class="vw-w"><b>${esc(w.w)}</b><span>${esc(w.p)}</span><button type="button" class="spk sm" id="vwSay" aria-label="朗读">${icon('i-speaker-high')}</button></div>
         <div class="vw-m">${esc(short(w))}</div>
-        <div class="vw-hint">${icon('i-hand-tap')}按住卡片拖动，看镭射光</div>
-        ${owned.length > 1 ? `<div class="vchips">${chips}</div>` : ''}</div>
+        ${owned.length > 1 ? `<div class="vchips">${chips}</div>` : ''}
+        <div class="schips">${schips}</div></div>
       <div class="racts"><button type="button" class="btn ghost" id="vwWord">单词详情</button><button type="button" class="btn holo" id="vwShare">晒这张卡</button></div>`;
     if (viewerCard) { try { viewerCard.destroy(); } catch (e) { } }
-    const made = CardKit.make(vid, w, { interactive: true, lit: true });
+    const made = CardKit.make(vid, w, { interactive: true, lit: true, seal });
     viewerCard = made.card;
     $('#vwStage').appendChild(made.el);
     CardKit.fit($('#vwStage'), vid);
     $('#vwX').addEventListener('click', closeViewer);
     $('#vwSay').addEventListener('click', () => speak(w.w));
-    $('#vwShare').addEventListener('click', () => shareCard(k, vid));
+    $('#vwShare').addEventListener('click', () => shareCard(k, vid, seal));
     $('#vwWord').addEventListener('click', () => { closeViewer(); openWord(k); });
     $$('#vwBody .vchip').forEach(b => b.addEventListener('click', () => openViewer(k, b.dataset.vid)));
+    $$('#vwBody .schip').forEach(b => b.addEventListener('click', () => openViewer(k, vid, b.dataset.seal)));
   }
   function closeViewer() {
     if (viewerCard) { try { viewerCard.destroy(); } catch (e) { } viewerCard = null; }
@@ -922,7 +950,7 @@
     const counts = ORDER.map(t => [t, tierOwned(t)]).reverse();
     const col = ws.filter(w => ownVids(w.k).length).length;
     $('#aBody').innerHTML = `
-      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18</span></header>
+      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 邮戳 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
       <div class="rar">${counts.map(x => `<span class="gl ${tierCls(x[0])}"><i></i>${TIER[x[0]].cn} ${x[1]}</span>`).join('')}</div>
       <div class="pagec gl" id="aPage">
         <div class="pt"><span>第 ${g + 1} 组<small>No.${pad3(ws[0].i)}–${pad3(ws[ws.length - 1].i)}</small></span><span><b>${col}</b> / ${ws.length}</span></div>
@@ -930,7 +958,7 @@
         <div class="pager"><button type="button" class="ibtn" id="aPrev" aria-label="上一组"${g ? '' : ' disabled'}>${icon('i-caret-left')}</button><span>${pad2(g + 1)} / ${NG}</span><button type="button" class="ibtn" id="aNext" aria-label="下一组"${g < NG - 1 ? '' : ' disabled'}>${icon('i-caret-right')}</button></div>
       </div>
       <div class="bts">
-        <button type="button" class="btn soft" data-act="gallery">${icon('i-cards-d')}卡面图鉴</button>
+        <button type="button" class="btn soft" data-act="gallery">${icon('i-cards-d')}图鉴</button>
         <button type="button" class="btn soft" data-act="odds">${icon('i-chart-bar')}概率与保底</button>
         <button type="button" class="btn soft" data-act="dust"><img src="img/icon3d/stardust.webp" alt="">星尘 ${S.dust}</button>
       </div>
@@ -939,7 +967,7 @@
     ws.forEach(w => {
       const s = document.createElement('button'); s.type = 'button'; s.className = 'sl';
       const vid = bestVid(w.k);
-      if (vid) { s.appendChild(CardKit.mini(vid, w, { charm: false })); s.addEventListener('click', () => openViewer(w.k, vid)); }
+      if (vid) { s.appendChild(CardKit.mini(vid, w, { seal: bestSeal(w.k, vid) })); s.addEventListener('click', () => openViewer(w.k, vid)); }
       else { s.classList.add('e'); s.innerHTML = `<span>${pad3(w.i)}</span>`; s.addEventListener('click', () => openWord(w.k)); }
       slots.appendChild(s);
     });
@@ -965,7 +993,7 @@
     const owned = {}; Object.keys(S.cards).forEach(k => ownVids(k).forEach(id => { if (!owned[id]) owned[id] = +k; }));
     const body = $('#gBody');
     body.innerHTML = `<div class="rtop"><button type="button" class="cl" data-act="back" aria-label="返回">${icon('i-arrow-left')}</button><div class="tkt">已解锁 <b>${Object.keys(owned).length}</b> / 18</div></div>
-      <h1 class="gh">卡面图鉴</h1><div class="gsub">Sept niveaux · dix-huit finitions</div><div id="gRows"></div>`;
+      <h1 class="gh">图鉴</h1><div class="gsub">Sept niveaux · dix-huit finitions</div><div id="gRows"></div>`;
     const rows = $('#gRows');
     C.TIERS.slice().reverse().forEach(t => {
       const row = document.createElement('div'); row.className = 'grow ' + tierCls(t.t);
@@ -978,18 +1006,22 @@
         cell.insertAdjacentHTML('beforeend', `<p>${esc(v.en)}<span>${esc(v.cn)}</span></p>`);
         cs.appendChild(cell);
         if (owned[v.id] != null) {
-          const made = CardKit.make(v.id, WORDS[owned[v.id]], {});
+          const made = CardKit.make(v.id, WORDS[owned[v.id]], { seal: bestSeal(owned[v.id], v.id) });
           galleryCards.push(made.card);
           box.appendChild(made.el);
           cell.addEventListener('click', () => openViewer(owned[v.id], v.id));
         } else {
-          box.appendChild(CardKit.mini(v.id, null, { cls: 'locked', charm: true }));
+          box.appendChild(CardKit.mini(v.id, null, { cls: 'locked' }));
           box.insertAdjacentHTML('beforeend', `<i class="lock">?</i>`);
           cell.addEventListener('click', () => toast(`${t.t} ${t.cn}「${v.cn}」还没抽到`));
         }
       });
       rows.appendChild(row);
     });
+    const so = sealsOwned();
+    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">邮戳图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
+      SEAL_TIERS.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span><em>${fmtP(t.rate)}</em></div><div class="gseals">` +
+        t.v.map(x => `<div class="gseal${so[x.id] ? '' : ' locked'}"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}<span>${fmtP(x.p)}</span></p></div>`).join('') + '</div></div>').join(''));
     requestAnimationFrame(() => $$('#gRows .gcell').forEach(cell => { const box = cell.querySelector('.gbox'); const hc = box.querySelector('.holo-card'); if (hc) { const vid = Array.prototype.slice.call(hc.classList).filter(c => c.indexOf('v-') === 0)[0].slice(2); CardKit.fit(box, vid); } }));
   }
 
@@ -1013,7 +1045,7 @@
     const ws = filtered();
     $('#bCount').textContent = '共 ' + ws.length + ' 词';
     const list = $('#bList');
-    if (!ws.length) { list.innerHTML = `<div class="empty">${BF.f === 'w' ? '错词本是空的，继续保持' : '没有找到符合条件的词'}</div>`; $('#bMore').hidden = true; return; }
+    if (!ws.length) { list.innerHTML = `<div class="empty">${BF.f === 'w' ? '错词本是空的' : '没有找到'}</div>`; $('#bMore').hidden = true; return; }
     const st = { new: '', w: 'w', l: 'l', m: 'm' };
     list.innerHTML = ws.slice(0, BF.limit).map(w => {
       const vid = bestVid(w.k);
@@ -1050,7 +1082,7 @@
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
       ${w.note ? `<div class="fb-n">${esc(w.note)}</div>` : ''}
       <div class="fb-l"><em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
-      ${owned.length ? `<div class="wsh-cards"><h4>已收集的卡面</h4><div class="wsh-row" id="wsCards"></div></div>` : '<div class="wsh-empty">还没有这个词的卡 · 练过的词才会出现在卡池里</div>'}
+      ${owned.length ? `<div class="wsh-cards"><h4>已收集的卡面</h4><div class="wsh-row" id="wsCards"></div></div>` : '<div class="wsh-empty">还没有这张卡</div>'}
       <div class="sh-acts"><button type="button" class="btn soft" id="wsWrong">${icon(wr ? 'i-star-f' : 'i-star')}${wr ? '移出错词本' : '加入错词本'}</button></div></div>`, root => {
       root.querySelector('#wsSay').addEventListener('click', () => speak(w.w));
       root.querySelector('#wsWrong').addEventListener('click', () => {
@@ -1058,7 +1090,7 @@
         toast(wr ? '已移出错词本' : '已加入错词本'); if (view === 'book') renderBook(); if (view === 'home') renderHome();
       });
       const row = root.querySelector('#wsCards');
-      if (row) owned.forEach(id => { const b = document.createElement('button'); b.type = 'button'; b.className = 'wsc'; b.appendChild(CardKit.mini(id, w, { charm: false })); b.addEventListener('click', () => { closeSheet(); openViewer(k, id); }); row.appendChild(b); });
+      if (row) owned.forEach(id => { const b = document.createElement('button'); b.type = 'button'; b.className = 'wsc'; b.appendChild(CardKit.mini(id, w, { seal: bestSeal(k, id) })); b.addEventListener('click', () => { closeSheet(); openViewer(k, id); }); row.appendChild(b); });
     });
   }
 
@@ -1134,15 +1166,10 @@
     else { ctx.textAlign = 'center'; ctx.fillText(w.w, x + W / 2, y + H * .25 + ws * .82); }
     ctx.fillStyle = gold || ink;
     const cx = land ? L + W * .028 : x + W / 2;
-    let yy = y + H * (land ? .52 : .43);
-    ctx.font = `400 ${u * .19}px ${SA}`; ctx.globalAlpha = .72; ctx.fillText(w.p, cx, yy + u * .19); ctx.globalAlpha = 1;
-    yy += u * .19 + u * .3;
-    ctx.font = `600 ${u * .23}px ${SC}`; ctx.fillText(w.cp + ' ' + w.cm, cx, yy);
     // 例句
     const lw = land ? W * .6 : W * .8;
-    let ly = y + H * (land ? .665 : .6);
+    let ly = y + H * (land ? .5 : .46);
     const long = (w.en.length > 78 ? .78 : w.en.length > 58 ? .88 : 1) * (land ? .86 : 1);
-    ctx.globalAlpha = .4; ctx.fillRect(land ? cx : cx - u * .25, ly, u * .5, 1); ctx.globalAlpha = 1;
     ly += u * .32;
     ctx.font = `italic 400 ${u * .27 * long}px ${SE}`;
     wrap(ctx, w.en, lw).forEach(l => { ly += u * .27 * long * 1.2; ctx.fillText(l, cx, ly); });
@@ -1152,21 +1179,21 @@
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
     // 页脚
     ctx.font = `600 ${u * .155}px ${SC}`; ctx.globalAlpha = .8;
-    if (land) { ctx.textAlign = 'right'; ctx.fillText(v.cn + '   第 ' + w.g + ' 组', R, y + H * .93); }
-    else { spaced(ctx, v.cn, L, y + H * .95, u * .03, 'left'); ctx.textAlign = 'right'; ctx.fillText('第 ' + w.g + ' 组', R, y + H * .95); }
+    if (land) spaced(ctx, v.cn, L, y + H * .93, u * .03, 'left');
+    else spaced(ctx, v.cn, L, y + H * .95, u * .03, 'left');
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
-    if (imgs.charm) { const cs = u * (land ? 1.85 : .95); ctx.drawImage(imgs.charm, land ? x + W * .93 - cs : x + W * .95 - cs, land ? y + H * .2 : y + H * .915 - cs, cs, cs); }
+    if (imgs.seal) { const cs = u * (land ? 1.05 : 1.15); ctx.drawImage(imgs.seal, land ? x + W * .96 - cs : x + W * .955 - cs, land ? y + H * .88 - cs : y + H * .915 - cs, cs, cs); }
     ctx.restore();
   }
   function bgFill(ctx, W, H, im, dark) {
     ctx.fillStyle = dark ? '#16121F' : '#F6EEF3'; ctx.fillRect(0, 0, W, H);
     cover(ctx, im, 0, 0, W, H);
   }
-  async function cardPoster(k, vid, safe) {
+  async function cardPoster(k, vid, safe, seal) {
     const v = C.BY_ID[vid], w = WORDS[k], t = TIER[v.tier];
     await fontsReady();
     const imgs = safe ? {} : {
-      art: await loadImg('img/art/' + vid + '.webp'), charm: v.charm ? await loadImg('img/charm/' + v.charm + '.webp') : null,
+      art: await loadImg('img/art/' + vid + '.webp'), seal: seal ? await loadImg('img/seal/' + seal + '.webp') : null,
       line: (window.LINEART || {})[vid] ? await loadImg(window.LINEART[vid]) : null
     };
     const bg = safe ? null : await loadImg('img/bg/' + (v.rank >= 5 || v.lt ? 'night' : v.rank >= 3 ? 'dusk' : 'sky') + '.webp');
@@ -1186,7 +1213,8 @@
     await drawCardTo(ctx, cx, cy, cw, ch, vid, w, imgs);
     ctx.textAlign = 'center'; ctx.fillStyle = sub; ctx.font = `400 26px ${SA}`;
     const by = cy + ch + 74;
-    ctx.fillText(v.rank >= 3 ? `概率 ${fmtP(t.rate / t.v.length)} 的${t.cn}，被我抽到了` : '今天也抽到了一张卡', W / 2, by);
+    const sl = seal && SEAL[seal];
+    ctx.fillText(sl ? `${t.cn} · ${sl.tcn}「${sl.cn}」` : t.cn, W / 2, by);
     ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('单词手账 · 高考核心 688 词', W / 2, H - 70);
     return cv;
   }
@@ -1230,9 +1258,9 @@
     try { return toData(await fn(false)); }
     catch (e) { try { return toData(await fn(true)); } catch (e2) { return null; } }
   }
-  async function shareCard(k, vid) {
+  async function shareCard(k, vid, seal) {
     const v = C.BY_ID[vid];
-    openShare('晒这张卡', () => makeImage(safe => cardPoster(k, vid, safe)), {
+    openShare('晒这张卡', () => makeImage(safe => cardPoster(k, vid, safe, seal)), {
       title: v.rank >= 3 ? `抽到了${TIER[v.tier].cn}「${v.cn}」` : '单词手账的新卡片',
       content: `背单词抽到了 ${v.tier} ${TIER[v.tier].cn}「${v.cn}」✨ 单词：${WORDS[k].w}\n#单词手账 #高考英语 #背单词`
     });
@@ -1307,7 +1335,7 @@
     if (!S.welcome) {
       S.welcome = true;
       addTickets(10, 1);
-      setTimeout(() => modal('欢迎来到单词手账', '送你 10 张抽卡券。答题攒券：全部测试正确率越高，抽到稀有卡面的概率越高。练过的单词才会出现在卡池里。', [{ label: '先去背词' }, { label: '去抽卡', cls: 'holo', fn: () => show('draw') }]), 400);
+      setTimeout(() => modal('单词手账', '送你 10 张抽卡券。', [{ label: '先去背词' }, { label: '去抽卡', cls: 'holo', fn: () => show('draw') }]), 400);
     }
     save();
     $('#boot').hidden = true; $('#app').hidden = false;

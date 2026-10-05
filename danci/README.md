@@ -26,6 +26,7 @@
   - N 40%
 - **保底**：十连必出 SR 以上，60 抽必出 SSR 以上，150 抽必出 UR 以上。
 - **单词来源**：抽到的单词来自练过的词和当前分组。
+- **蜡封邮戳**：每张卡另抽一枚蜡封，与卡面等级独立。素封 50%、珍封 30%、金封 15%、秘封 5%。同一单词、同一卡面、同一蜡封才算重复。
 - **星尘**：重复的卡折算成星尘，20 星尘可换 1 张券。
 - **卡册与图鉴**：卡册每组一页；图鉴展示 18 款卡面；卡片详情可以拖动看镭射效果。
 - **晒图**：卡片海报和成绩卡都用 Canvas 2D 生成，通过 `saveImageToPhotosAlbum` 存相册、`postNote` 发笔记。
@@ -41,35 +42,10 @@ node tools/e2e.js                  # 可选：模拟容器把主要流程点一�
 
 依赖：Python 3（`pip install fonttools brotli pillow`）、Node 18+、Playwright 自带的 Chromium（仅预渲染和测试用）。
 
-## 线稿位（UR 及以上 6 款）
+## 线稿与蜡封素材
 
-人物线稿显示在卡面底图之上、镭射层之下，越往下越淡，给例句让出位置。程序会自动给线条染色：浅色卡用深色线，深色卡用浅金或浅蓝线，并处理成半透明。
-
-线稿交付格式：
-
-- 一张图，**3 列 × 2 行**，纯白底黑线，PNG 或 JPG，建议 2048px 以上。
-- 格子顺序，从左到右、从上到下：
-
-| 格子 | 卡面 |
-|---|---|
-| 第 1 格 | UR 棱镜之吻 |
-| 第 2 格 | UR 玫瑰金誓约 |
-| 第 3 格 | LR 极光情书 |
-| 第 4 格 | LR 晚霞心动 |
-| 第 5 格 | SECRET 午夜星河 |
-| 第 6 格 | SECRET 月光恋人 |
-
-- 每格竖版约 2:3。主体放在格子上半部分，下方约 40% 留空。
-- 第 6 格是横版卡，人物会被放在卡面右侧，月亮挂件会自动缩小移到右上角。
-
-放进来：
-
-```bash
-python3 tools/build.py --lineart 线稿.png
-# 格子排列不同时：--grid 2x3 --order ur1,ur2,lr1,lr2,x1,x2
-```
-
-处理结果写到 `src/lineart/*.webp` 和 `src/js/lineart.js`，然后重新打包。
+- 线稿：LR「极光情书」、SECRET「午夜星河」「月光恋人」三款使用。源图 `lineart-src/sheet.jpg`，处理参数在 `tools/build.py` 的 `FRAMING`。重新处理：`python3 tools/build.py --lineart lineart-src/sheet.jpg`
+- 蜡封：源图 `seals-src/*.jpg`，`python3 tools/seals.py` 抠图输出到 `src/img/seal/`。
 
 ## 目录
 

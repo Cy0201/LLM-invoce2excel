@@ -14,15 +14,20 @@
   function tierLabel(t) { return t; }
 
   // w: {i,w,p,cp,cm,en,cn,src,g}
-  function overlayHTML(v, w, withWord) {
+  // 蜡封：浮在卡面上，倾斜时有视差；高光跟着手指走，只照在蜡上
+  function sealHTML(id, cls) {
+    if (!id) return '';
+    var u = 'img/seal/' + id + '.webp';
+    return '<div class="' + cls + '" style="background-image:url(' + u + ')"><i style="-webkit-mask-image:url(' + u + ');mask-image:url(' + u + ')"></i></div>';
+  }
+  function overlayHTML(v, w, withWord, seal) {
     var wd = '<div class="cf-w">' + esc(w.w) + '</div>';
     return (v.frame ? '<div class="cf-frame"></div>' : '') + (withWord ? wd : '') +
       '<div class="cf-tier">' + tierLabel(v.tier) + '</div><div class="cf-name">' + esc(v.en) + '</div>' +
       '<div class="cf-no">' + pad3(w.i) + ' / 688</div>' +
-      '<div class="cf-pm"><span class="cf-ipa">' + esc(w.p) + '</span><b><i>' + esc(w.cp) + '</i>' + esc(w.cm) + '</b></div>' +
-      (w.en ? '<div class="cf-line' + lenClass(w) + '"><i class="cf-rule"></i><em>' + esc(w.en) + '</em><span class="cf-cn">' + esc(w.cn) + '</span>' + (w.src ? '<span class="cf-src">— ' + esc(w.src) + '</span>' : '') + '</div>' : '') +
-      '<div class="cf-foot"><span>' + esc(v.cn) + '</span><span>第 ' + w.g + ' 组</span></div>' +
-      (v.charm ? '<img class="cf-charm" src="img/charm/' + v.charm + '.webp" alt="">' : '');
+      (w.en ? '<div class="cf-line' + lenClass(w) + '"><em>' + esc(w.en) + '</em><span class="cf-cn">' + esc(w.cn) + '</span>' + (w.src ? '<span class="cf-src">— ' + esc(w.src) + '</span>' : '') + '</div>' : '') +
+      '<div class="cf-foot"><span>' + esc(v.cn) + '</span></div>' +
+      sealHTML(seal, 'cf-seal');
   }
 
   /* 完整卡。opt: {interactive, glow, lit} 返回 {el, card} */
@@ -36,7 +41,7 @@
     if (!top) face.innerHTML = '<div class="cf-w">' + esc(w.w) + '</div>';
     var ov = document.createElement('div');
     ov.className = 'cf-ov' + (v.lt ? ' lt' : '') + (v.gold ? ' gold' : '') + (land ? ' land' : '') + (v.frame ? ' fr' + v.frame : '');
-    ov.innerHTML = (art ? '<div class="cf-art"></div>' : '') + overlayHTML(v, w, top);
+    ov.innerHTML = (art ? '<div class="cf-art"></div>' : '') + overlayHTML(v, w, top, opt.seal);
     var pal = v.pal || (v.eff === 'holo' || v.eff === 'reverse' || v.eff === 'radiant' ? C.PASTEL : undefined);
     var card = HoloKit.createHoloCard({
       image: 'img/art/' + vid + '.webp', effect: v.eff, textureSeed: 7,
@@ -75,10 +80,10 @@
       (v.rank >= 2 ? '<i class="mc-foil"></i>' : '') + (v.frame ? '<i class="mc-frame"></i>' : '') +
       '<b class="mc-t">' + v.tier + '</b>' +
       (w ? '<span class="mc-w">' + esc(w.w) + '</span>' : '') +
-      (v.charm && opt.charm !== false ? '<img class="mc-ch" src="img/charm/' + v.charm + '.webp" alt="">' : '') +
+      sealHTML(opt.seal, 'mc-seal') +
       '</div>';
     return d;
   }
 
-  window.CardKit = { make: make, mini: mini, fit: fit, esc: esc, pad3: pad3 };
+  window.CardKit = { make: make, mini: mini, fit: fit, esc: esc, pad3: pad3, sealHTML: sealHTML };
 })();

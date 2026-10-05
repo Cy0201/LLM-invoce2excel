@@ -19,22 +19,31 @@
       { id: 'r3', en: 'Velours', cn: '丝绒晚风', eff: 'radiant', art: ['#D9C9F4', '#F2C6DA', '#C9D9F4', '#EFD8F0'], vis: { brightness: .75 } }] },
     { t: 'SR', cn: '流光', rate: 18, dust: 5, v: [
       { id: 'sr1', en: 'Lumière', cn: '流光絮语', eff: 'holo', art: ['#C8B3F7', '#F7AECB', '#9FD0F4', '#F7DCA6'], vis: { brightness: .62, saturate: 1.1 } },
-      { id: 'sr2', en: 'Paillettes', cn: '星屑告白', eff: 'glitter', art: ['#E9B9D8', '#C4B5F4', '#A9D3F2', '#F6D6E6'], vis: { brightness: .72 }, charm: 'c_sparkle' },
-      { id: 'sr3', en: 'Cristal', cn: '碎冰心事', eff: 'crystal', art: ['#B9C7F6', '#D7B6F2', '#A6DDF0', '#E8D7F7'], vis: { brightness: .72 }, charm: 'c_gem' }] },
+      { id: 'sr2', en: 'Paillettes', cn: '星屑告白', eff: 'glitter', art: ['#E9B9D8', '#C4B5F4', '#A9D3F2', '#F6D6E6'], vis: { brightness: .72 } },
+      { id: 'sr3', en: 'Cristal', cn: '碎冰心事', eff: 'crystal', art: ['#B9C7F6', '#D7B6F2', '#A6DDF0', '#E8D7F7'], vis: { brightness: .72 } }] },
     { t: 'SSR', cn: '星辉', rate: 8, dust: 10, v: [
-      { id: 'ssr1', en: 'Arc-en-ciel', cn: '彩虹私语', eff: 'rainbow', art: ['#A797F2', '#F29AC0', '#8DC8F2', '#9BE8D4'], vis: { brightness: .75 }, charm: 'c_heart', frame: 1 },
-      { id: 'ssr2', en: 'Opale', cn: '人鱼眼泪', eff: 'oilslick', art: ['#8FB8F0', '#C49AF0', '#8FE0E0', '#F0A8D0'], vis: { brightness: .72 }, charm: 'c_pearl', frame: 1 },
-      { id: 'ssr3', en: 'Mosaïque', cn: '糖霜琉璃', eff: 'mosaic', art: ['#F2A9C8', '#C9A8F2', '#A8D4F2', '#F7D6A8'], vis: { brightness: .72 }, charm: 'c_bow', frame: 1 }] },
+      { id: 'ssr1', en: 'Arc-en-ciel', cn: '彩虹私语', eff: 'rainbow', art: ['#A797F2', '#F29AC0', '#8DC8F2', '#9BE8D4'], vis: { brightness: .75 }, frame: 1 },
+      { id: 'ssr2', en: 'Opale', cn: '人鱼眼泪', eff: 'oilslick', art: ['#8FB8F0', '#C49AF0', '#8FE0E0', '#F0A8D0'], vis: { brightness: .72 }, frame: 1 },
+      { id: 'ssr3', en: 'Mosaïque', cn: '糖霜琉璃', eff: 'mosaic', art: ['#F2A9C8', '#C9A8F2', '#A8D4F2', '#F7D6A8'], vis: { brightness: .72 }, frame: 1 }] },
     { t: 'UR', cn: '璀璨', rate: 3, dust: 20, v: [
-      { id: 'ur1', en: 'Prisme', cn: '棱镜之吻', eff: 'prism', art: ['#C8B3F7', '#F7AECB', '#9FD0F4', '#F7DCA6'], vis: { brightness: .6 }, charm: 'c_star', frame: 2, slot: 0, ink: '#3E2F7A' },
-      { id: 'ur2', en: 'Or Rosé', cn: '玫瑰金誓约', eff: 'radiant', art: ['#E9B7B9', '#C98A9A', '#F6D5C4', '#B87C93'], vis: { brightness: .62, glareOpacity: .6 }, pal: ROSEGOLD, top: 1, charm: 'c_crown', frame: 2, slot: 1, ink: '#6E2F45' }] },
+      { id: 'ur1', en: 'Prisme', cn: '棱镜之吻', eff: 'prism', art: ['#C8B3F7', '#F7AECB', '#9FD0F4', '#F7DCA6'], vis: { brightness: .6 }, frame: 2, slot: 0, ink: '#3E2F7A' },
+      { id: 'ur2', en: 'Or Rosé', cn: '玫瑰金誓约', eff: 'radiant', art: ['#E9B7B9', '#C98A9A', '#F6D5C4', '#B87C93'], vis: { brightness: .62, glareOpacity: .6 }, pal: ROSEGOLD, top: 1, frame: 2, slot: 1, ink: '#6E2F45' }] },
     { t: 'LR', cn: '传说', rate: 0.8, dust: 40, v: [
-      { id: 'lr1', en: 'Aurore', cn: '极光情书', eff: 'aurora', art: ['#2E2A7C', '#1E8FA6', '#7E4FC6', '#C96AA8'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, charm: 'c_moon', frame: 2, slot: 2, ink: '#E8F4FF' },
-      { id: 'lr2', en: 'Crépuscule', cn: '晚霞心动', eff: 'sunburst', art: ['#F08FA8', '#9B7FE6', '#F6B98A', '#5E5BC9'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, charm: 'c_heart', frame: 2, slot: 3, ink: '#7A2E55' }] },
+      { id: 'lr1', en: 'Aurore', cn: '极光情书', eff: 'aurora', art: ['#2E2A7C', '#1E8FA6', '#7E4FC6', '#C96AA8'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, frame: 2, slot: 2, ink: '#E8F4FF' },
+      { id: 'lr2', en: 'Crépuscule', cn: '晚霞心动', eff: 'sunburst', art: ['#F08FA8', '#9B7FE6', '#F6B98A', '#5E5BC9'], vis: { brightness: .5, glareOpacity: .45 }, lt: 1, top: 1, frame: 2, slot: 3, ink: '#7A2E55' }] },
     { t: 'SECRET', cn: '隐藏款', rate: 0.2, dust: 80, v: [
-      { id: 'x1', en: 'Minuit', cn: '午夜星河', eff: 'cosmos', art: ['#100D24', '#36246A', '#14305E', '#5E2160'], lt: 1, gold: 1, top: 1, charm: 'c_star', frame: 3, slot: 4, ink: '#F4DDA8' },
-      { id: 'x2', en: 'Clair de Lune', cn: '月光恋人', eff: 'holo', art: ['#D5D2F4', '#F1E1F0', '#B9C6EE', '#8E8CCB'], vis: { brightness: .55, saturate: .6 }, pal: MOON, land: 1, charm: 'c_moon', frame: 3, slot: 5, ink: '#3B3570' }] }
+      { id: 'x1', en: 'Minuit', cn: '午夜星河', eff: 'cosmos', art: ['#100D24', '#36246A', '#14305E', '#5E2160'], lt: 1, gold: 1, top: 1, frame: 3, slot: 4, ink: '#F4DDA8' },
+      { id: 'x2', en: 'Clair de Lune', cn: '月光恋人', eff: 'holo', art: ['#D5D2F4', '#F1E1F0', '#B9C6EE', '#8E8CCB'], vis: { brightness: .55, saturate: .6 }, pal: MOON, land: 1, frame: 3, slot: 5, ink: '#3B3570' }] }
   ];
+  // 蜡封邮戳：与卡面等级独立抽取，稀有卡面 × 稀有邮戳 = 更稀有的组合
+  var SEAL_TIERS = [
+    { t: 'basic', cn: '素封', rate: 50, v: [{ id: 'star', cn: '薰衣草星' }, { id: 'bow', cn: '樱粉蝴蝶结' }, { id: 'heart', cn: '珠光爱心' }] },
+    { t: 'rare', cn: '珍封', rate: 30, v: [{ id: 'diamond', cn: '冰蓝钻石' }, { id: 'pearl', cn: '珍珠贝壳' }, { id: 'sunset', cn: '晚霞心' }] },
+    { t: 'gold', cn: '金封', rate: 15, v: [{ id: 'crown', cn: '玫瑰金王冠' }, { id: 'moon', cn: '月光新月' }] },
+    { t: 'secret', cn: '秘封', rate: 5, v: [{ id: 'aurora', cn: '极光新月' }, { id: 'midnight', cn: '午夜星月' }] }
+  ];
+  var SEAL = {};
+  SEAL_TIERS.forEach(function (t, ti) { t.rank = ti; t.v.forEach(function (x) { x.tier = t.t; x.tcn = t.cn; x.rank = ti; x.p = t.rate / t.v.length; SEAL[x.id] = x; }); });
   var ORDER = TIERS.map(function (x) { return x.t; });
   var BY_ID = {};
   TIERS.forEach(function (t, ti) { t.rank = ti; t.v.forEach(function (v) { v.tier = t.t; v.rank = ti; BY_ID[v.id] = v; }); });
@@ -51,5 +60,5 @@
     dusk: { c: ['#E0D2FA', '#F6C9C9', '#FBE3C9', '#C9B8F0'], s: 62, w: 390, h: 520 },
     night: { c: ['#3A2A6E', '#8A3F7E', '#1E3C78', '#15121C'], s: 63, w: 390, h: 520 }
   };
-  window.CATALOG = { TIERS: TIERS, ORDER: ORDER, BY_ID: BY_ID, BG: BG, PASTEL: PASTEL };
+  window.CATALOG = { TIERS: TIERS, ORDER: ORDER, BY_ID: BY_ID, BG: BG, PASTEL: PASTEL, SEAL_TIERS: SEAL_TIERS, SEAL: SEAL };
 })();
