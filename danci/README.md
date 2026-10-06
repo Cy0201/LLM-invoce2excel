@@ -65,7 +65,7 @@ python3 tools/gift_codes.py --year --force                                     #
 
 ## 宣传片
 
-`promo/单词手账-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音用 app 里的真人录音。隐藏款只露出光缝里的一窄条。
+`promo/单词手账-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音与小工具同一套 TTS 声线（Fable）。隐藏款只露出光缝里的一窄条。
 
 ```bash
 python3 tools/build.py                                   # 先生成 dist/
