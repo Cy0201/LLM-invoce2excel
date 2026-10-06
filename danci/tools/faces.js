@@ -1,5 +1,5 @@
 // 分享图用的卡面：把 app 里真实的镭射卡（闪粉、条纹、高光都在）在固定光位下拍成图片，
-// 不含文字和蜡封（分享图里再按单词画上去），输出 src/img/face/<卡面>.webp。
+// 不含文字和火漆（分享图里再按单词画上去），输出 src/img/face/<卡面>.webp。
 // 用法：python3 tools/build.py 之后运行 node tools/faces.js，再重新 build 打包。
 const path = require('path'), fs = require('fs'), http = require('http'), { execFileSync } = require('child_process');
 let chromium;
@@ -26,7 +26,7 @@ const W = 620;   // 竖版卡宽（横版卡取同样的高）
   const ids = await p.evaluate(() => Object.keys(window.CATALOG.BY_ID));
   await p.addStyleTag({ content: `
     #facebox{position:fixed;left:40px;top:40px;z-index:9999;background:transparent}
-    /* 只要底图、线稿和镭射层：文字、外框、蜡封都由分享图自己画 */
+    /* 只要底图、线稿和镭射层：文字、外框、火漆都由分享图自己画 */
     #facebox .cf-face{display:none!important}
     #facebox .cf-ov>*:not(.cf-art){display:none!important}
     /* 固定光位（右上角，避开单词所在的位置），卡面本身不倾斜，投影交给分享图 */

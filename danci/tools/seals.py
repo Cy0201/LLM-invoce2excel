@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""蜡封抠图：白底照片 → 透明底 webp（统一正圆、统一尺寸与留白）
+"""火漆抠图：白底照片 → 透明底 webp（统一正圆、统一尺寸与留白）
 
 用法：python3 tools/seals.py            # 处理 seals-src/*.jpg|png → src/img/seal/<同名>.webp
 依赖：pip install opencv-python-headless scipy scikit-image pillow numpy
@@ -9,7 +9,7 @@
    白蜡与白底颜色太近，改用 GrabCut + 测地线主动轮廓收掉投影；都只保留最大块，去掉水印和碎片
 2. 三分图 + alpha matting：彩色蜡在边缘带按饱和度估计透明度，边缘颜色取相邻蜡色
    （去色污染），消除白边；白蜡用平滑后的分割边界
-3. 椭圆拟合 + 仿射校正：斜着拍的蜡封是椭圆，按长短轴把它拉回正圆
+3. 椭圆拟合 + 仿射校正：斜着拍的火漆是椭圆，按长短轴把它拉回正圆
 4. 统一裁切、留白、尺寸
 """
 import glob
@@ -92,7 +92,7 @@ def matte(img, fg, colored, s_seal):
 
 
 def roundify(rgb, alpha):
-    """椭圆拟合，把斜拍成椭圆的蜡封拉回正圆"""
+    """椭圆拟合，把斜拍成椭圆的火漆拉回正圆"""
     m = (alpha > .5).astype(np.uint8)
     cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     c = max(cnts, key=cv2.contourArea)

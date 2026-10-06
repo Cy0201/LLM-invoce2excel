@@ -6,3 +6,4 @@ tools/.shots/
 !不止单词.zip
 !tools/vendor/cards-css/dist/
 gift-codes/
+__pycache__/

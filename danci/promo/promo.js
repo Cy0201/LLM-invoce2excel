@@ -106,7 +106,7 @@
   D.forEach(function (d) { var c = card(d.v, d.w, d.s, 290, $('#dFlow'), 'dc', d.v === 'x1'); d.c = c; d.tier = C.BY_ID[d.v].tier; d.cn = C.TIERS[C.BY_ID[d.v].rank].cn; d.col = C.BY_ID[d.v].art; });
   var D_T0 = 10.5;
 
-  // E：十枚蜡封
+  // E：十枚火漆
   var SE = ['star', 'bow', 'heart', 'diamond', 'pearl', 'sunset', 'crown', 'moon', 'aurora', 'midnight'];
   var seals = SE.map(function (id) { return { id: id, rank: C.SEAL[id].rank, el: sealEl(id, $('#eSeals')) }; });
   var ST = C.SEAL_TIERS;
@@ -545,7 +545,7 @@
   // 预热：每个场景都画一遍，触发图片和分片字体加载
   window.warm = function () {
     for (var t = 0; t <= 20; t += .25) render(t);
-    // 盖章落点：卡片落定时蜡封的位置
+    // 盖章落点：卡片落定时火漆的位置
     render(3.6);
     var tr = $('#bTk').getBoundingClientRect(); TKT.x = tr.left + tr.width / 2; TKT.y = tr.top + tr.height / 2;
     render(17.45);

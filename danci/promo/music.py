@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """宣传片配乐 v2：全部用 numpy 合成（无版权素材），120 BPM（一拍 0.5 秒），和 promo.js 的时间线逐点对齐。
 编制：柔和钢琴、温暖弦乐、八音盒主旋律（贯穿全片的记忆点）、合唱、低音、轻打击；音效复用 app 的 tools/sfx.py。
-情绪线：悬念开场 → 轻快答题 → 蓄力 → 揭晓爆发 → 七个等级上行 → 隐藏款前骤停（心跳 + 暗色和弦）→ 蜡封 → 盖章后大三和弦落地。
+情绪线：悬念开场 → 轻快答题 → 蓄力 → 揭晓爆发 → 七个等级上行 → 隐藏款前骤停（心跳 + 暗色和弦）→ 火漆 → 盖章后大三和弦落地。
 用法：python3 promo/music.py <输出.wav>
 """
 import json
@@ -300,7 +300,7 @@ strings(DB, 13.5, 14.6, g=.06, att=.05, rel=.7, cut=1500)
 heartbeat(14.0, .35)
 put(dry, FX.noise_sweep(.6, 2500, 9000, 'arch', 1.0, .4), 13.55, .06, 0, .5)   # 光缝扫过
 
-# ===== E 14.5–17.5：蜡封 =====
+# ===== E 14.5–17.5：火漆 =====
 strings(GM9, 14.5, 16.5, g=.05, att=.3, rel=.4, cut=2200)
 strings(C11, 16.5, 17.5, g=.05, att=.2, rel=.2, cut=1800)
 for i in range(5):
@@ -311,7 +311,7 @@ for i in range(5):
         snap(t, .12)
 for i in range(9):
     shaker(14.75 + i * .25, .04)
-for j in range(10):                                              # 十枚蜡封弹出
+for j in range(10):                                              # 十枚火漆弹出
     FXpop = FX.marimba(hz([60, 62, 65, 67, 69, 72, 74, 77, 79, 81][j]), .3, 1.0)
     put(dry, FXpop, 14.45 + j * .05, .1, (-1) ** j * .5, .3)
 for k, m in enumerate([84, 88, 91, 96]):                         # 素封 珍封 金封 秘封

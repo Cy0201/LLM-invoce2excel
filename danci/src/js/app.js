@@ -228,7 +228,7 @@
     const own = S.cards[w.k] || (S.cards[w.k] = {});
     const e = own[v.id] || (own[v.id] = { n: 0, s: {} });
     const newCard = !e.n, newSeal = !e.s[seal];
-    const dup = !newCard && !newSeal;   // 单词、卡面、蜡封都一样才算重复
+    const dup = !newCard && !newSeal;   // 单词、卡面、火漆都一样才算重复
     e.n++; e.s[seal] = (e.s[seal] || 0) + 1;
     const dust = dup ? t.dust : 0;
     S.dust += dust;
@@ -374,7 +374,7 @@
   const sfxOk = () => sfx('ok');
   const sfxBad = () => sfx('bad');
   const sfxDone = () => sfx('done');
-  // 揭晓：按稀有度（卡面等级和蜡封取高）选音效，越稀有越隆重
+  // 揭晓：按稀有度（卡面等级和火漆取高）选音效，越稀有越隆重
   const sfxRare = r => sfx(r >= 6 ? 'r6' : r >= 5 ? 'r5' : r >= 4 ? 'r4' : r >= 3 ? 'r3' : r >= 2 ? 'r2' : 'r0');
 
   /* ================= 通用 UI ================= */
@@ -555,7 +555,7 @@
   }
 
   /* ================= 来信：兑换码 =================
-   * 入口藏在首页卡片的蜡封上：长按，或连点三下。校验见 gift.js（只存指纹），生成见 tools/gift_codes.py。
+   * 入口藏在首页卡片的火漆上：长按，或连点三下。校验见 gift.js（只存指纹），生成见 tools/gift_codes.py。
    * 同一批次每台手机只能领一次。 */
   (function () {
     const host = $('#hCont');
@@ -936,7 +936,7 @@
     const b = bestBatch(), m = b ? b.m : 1;
     openSheet(`<h3 class="sh-h">概率与保底<span>${m > 1 ? '当前使用 ' + fmtM(m) + ' 加成券' : '当前为基础概率'}</span></h3>
       <div class="ladder plain">${ladderHTML(m)}</div>
-      <h3 class="sh-h sm">蜡封<span>独立抽取</span></h3>
+      <h3 class="sh-h sm">火漆<span>独立抽取</span></h3>
       <div class="sealodds">${SEAL_TIERS.slice().reverse().map(t => `<div class="so"><b>${t.cn}</b><span>${t.v.map(x => `<img src="img/seal/${x.id}.webp" alt="">`).join('')}</span><em>${fmtP(t.rate)}</em></div>`).join('')}</div>
       <div class="rule">${RULE_HTML}<br>重复的卡化为星尘，${DUST_PER_TICKET} 星尘换 1 张抽卡券</div>`);
   }
@@ -1003,7 +1003,7 @@
       <div class="rl"><div class="r">${r.tier === 'SECRET' ? 'S E C R E T' : r.tier} · ${t.cn}</div><div class="f">${esc(v.en)}</div><div class="c">${esc(v.cn)}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="rvStage"></div>
       <div class="rinfo">${t.cn} · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」${r.pity ? ' · ' + r.pity + ' 保底' : ''}<br>
-        ${r.dup ? `重复获得 · 星尘 +${r.dust}` : r.newCard ? (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`) : `新蜡封 · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」`}</div>
+        ${r.dup ? `重复获得 · 星尘 +${r.dust}` : r.newCard ? (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`) : `新火漆 · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」`}</div>
       <div class="racts"><button type="button" class="btn ghost" id="rvShare">晒这张卡</button><button type="button" class="btn holo" id="rvOk">${ticketCount() ? '再抽一张' : '收进卡册'}</button></div>`;
     const stage = $('#rvStage');
     const made = CardKit.make(r.vid, w, { interactive: true, lit: true, seal: r.seal });
@@ -1099,7 +1099,7 @@
     const counts = ORDER.map(t => [t, tierOwned(t)]).reverse();
     const col = ws.filter(w => ownVids(w.k).length).length;
     $('#aBody').innerHTML = `
-      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 蜡封 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
+      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 火漆 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
       <div class="rar">${counts.map(x => `<span class="gl ${tierCls(x[0])}"><i></i>${TIER[x[0]].cn} ${x[1]}</span>`).join('')}</div>
       <div class="pagec gl" id="aPage">
         <div class="pt"><span>第 ${g + 1} 组<small>No.${pad3(ws[0].i)}–${pad3(ws[ws.length - 1].i)}</small></span><span><b>${col}</b> / ${ws.length}</span></div>
@@ -1168,7 +1168,7 @@
       rows.appendChild(row);
     });
     const so = sealsOwned();
-    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">蜡封图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
+    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">火漆图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
       SEAL_TIERS.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span></div><div class="gseals">` +
         t.v.map(x => `<div class="gseal${so[x.id] ? '' : ' locked'}"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}</p></div>`).join('') + '</div></div>').join(''));
     requestAnimationFrame(() => $$('#gRows .gcell').forEach(cell => { const box = cell.querySelector('.gbox'); const hc = box.querySelector('.holo-card'); if (hc) { const vid = Array.prototype.slice.call(hc.classList).filter(c => c.indexOf('v-') === 0)[0].slice(2); CardKit.fit(box, vid); } }));

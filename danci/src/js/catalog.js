@@ -35,7 +35,7 @@
       { id: 'x1', en: 'Minuit', cn: '午夜星河', eff: 'cosmos', art: ['#100D24', '#36246A', '#14305E', '#5E2160'], lt: 1, gold: 1, top: 1, frame: 3, slot: 4, ink: '#F4DDA8' },
       { id: 'x2', en: 'Clair de Lune', cn: '月光恋人', eff: 'holo', art: ['#D5D2F4', '#F1E1F0', '#B9C6EE', '#8E8CCB'], vis: { brightness: .55, saturate: .6 }, pal: MOON, land: 1, frame: 3, slot: 5, ink: '#3B3570' }] }
   ];
-  // 蜡封：与卡面等级独立抽取，稀有卡面 × 稀有蜡封 = 更稀有的组合
+  // 火漆：与卡面等级独立抽取，稀有卡面 × 稀有火漆 = 更稀有的组合
   var SEAL_TIERS = [
     { t: 'basic', cn: '素封', rate: 50, v: [{ id: 'star', cn: '薰衣草星' }, { id: 'bow', cn: '樱粉蝴蝶结' }, { id: 'heart', cn: '珠光爱心' }] },
     { t: 'rare', cn: '珍封', rate: 30, v: [{ id: 'diamond', cn: '冰蓝钻石' }, { id: 'pearl', cn: '珍珠贝壳' }, { id: 'sunset', cn: '晚霞心' }] },

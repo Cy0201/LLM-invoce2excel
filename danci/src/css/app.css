@@ -588,7 +588,7 @@ img{max-width:100%;display:block}
   .stage-on .stage,.tc,.qc.in{-webkit-animation-duration:.01s;animation-duration:.01s}
 }
 
-/* 蜡封：详情页切换、图鉴、概率表 */
+/* 火漆：详情页切换、图鉴、概率表 */
 .schips{display:-webkit-box;display:flex;flex-wrap:wrap;justify-content:center;margin-top:8px}
 .schip{display:-webkit-box;display:flex;align-items:center;height:32px;padding:0 10px 0 4px;border-radius:99px;background:rgba(255,255,255,.1);font:500 12px var(--sa);color:rgba(255,255,255,.85);margin:3px}
 .schip img{width:24px;height:24px;margin-right:5px}

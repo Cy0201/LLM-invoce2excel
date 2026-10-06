@@ -115,7 +115,7 @@ def write_codes(name, rows, title):
         for r in rows:
             w.writerow(r)
     with open(path + '.txt', 'w', encoding='utf-8') as f:
-        f.write(title + '\n兑换方式：长按首页卡片上的蜡封（或连点三下），输入兑换码。同一批每台手机限领一次。\n')
+        f.write(title + '\n兑换方式：长按首页卡片上的火漆（或连点三下），输入兑换码。同一批每台手机限领一次。\n')
         last = None
         for r in rows:
             if r[0] != last:

@@ -306,7 +306,7 @@ def referenced_ok():
     for sid in seals:
         if not os.path.exists(os.path.join(DIST, 'img', 'seal', sid + '.webp')):
             bad.append(('seal', sid))
-    log('蜡封 %d 枚' % len(seals))
+    log('火漆 %d 枚' % len(seals))
     for k in ['home', 'quiz', 'result', 'album', 'reveal', 'gallery', 'test', 'sky', 'dusk', 'night']:
         if not os.path.exists(os.path.join(DIST, 'img', 'bg', k + '.webp')):
             bad.append(('bg', k))

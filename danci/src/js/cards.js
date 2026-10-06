@@ -14,7 +14,7 @@
   function tierLabel(t) { return t; }
 
   // w: {i,w,p,cp,cm,en,cn,src,g}
-  // 蜡封：浮在卡面上，倾斜时有视差；高光跟着手指走，只照在蜡上
+  // 火漆：浮在卡面上，倾斜时有视差；高光跟着手指走，只照在蜡上
   function sealHTML(id, cls) {
     if (!id) return '';
     var u = 'img/seal/' + id + '.webp';
