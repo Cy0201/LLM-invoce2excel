@@ -116,6 +116,31 @@ body{background:#F3E9F0;font-family:-apple-system,BlinkMacSystemFont,"PingFang S
   <div class="sh" id="shBody"></div>
 </div>
 
+<!-- 来信（兑换码）：长按首页蜡封打开 -->
+<div id="letter" class="lt-wrap" hidden>
+  <canvas id="ltCf" class="cf"></canvas>
+  <div class="lt-in">
+    <button type="button" class="cl lt-x" id="ltX" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+    <div class="env" id="ltEnv">
+      <div class="env-back"></div>
+      <div class="env-tk" id="ltTk"><img src="img/icon3d/ticket.webp" alt=""><b id="ltN">×10</b><span>抽卡券</span></div>
+      <div class="env-front"></div>
+      <div class="env-flap"></div>
+      <div class="env-seal" id="ltSeal"><img src="img/seal/star.webp" alt=""></div>
+    </div>
+    <div class="lt-form" id="ltForm">
+      <div class="lt-k">LETTRE · 来信</div>
+      <input id="ltIn" class="lt-code" type="text" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" aria-label="兑换码" />
+      <p class="lt-err" id="ltErr" aria-live="polite"></p>
+      <button type="button" class="btn holo wide" id="ltGo">拆开</button>
+    </div>
+    <div class="lt-done" id="ltDone" hidden>
+      <p>收到 <b id="ltN2">10</b> 张抽卡券</p>
+      <div class="lt-acts"><button type="button" class="btn ghost" id="ltKeep">收下</button><button type="button" class="btn holo" id="ltDraw">去抽卡</button></div>
+    </div>
+  </div>
+</div>
+
 <!-- 底部弹层 -->
 <div id="sheet" class="sheet-wrap" hidden>
   <div class="sheet-bg" data-close-sheet></div>
@@ -135,6 +160,7 @@ body{background:#F3E9F0;font-family:-apple-system,BlinkMacSystemFont,"PingFang S
 <script src="./js/lineart.js"></script>
 <script src="./js/holokit.js"></script>
 <script src="./js/cards.js"></script>
+<script src="./js/gift.js"></script>
 <script src="./js/app.js"></script>
 <script src="./js/audio-clips.js" defer></script>
 <script src="./js/sfx-clips.js" defer></script>

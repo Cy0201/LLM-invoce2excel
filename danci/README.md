@@ -47,6 +47,22 @@ node tools/e2e.js                  # 可选：模拟容器把主要流程点一�
 - 线稿：LR「极光情书」、SECRET「午夜星河」「月光恋人」三款使用。源图 `lineart-src/sheet.jpg`，处理参数在 `tools/build.py` 的 `FRAMING`。重新处理：`python3 tools/build.py --lineart lineart-src/sheet.jpg`
 - 蜡封：源图 `seals-src/*.jpg`，`python3 tools/seals.py` 抠图输出到 `src/img/seal/`。
 
+## 兑换码（给粉丝发抽卡券）
+
+入口藏在首页卡片右上角的蜡封上：**长按**，或**连点三下**，会打开一封信，输入兑换码后拆开就到账。
+
+```bash
+python3 tools/gift_codes.py                                   # 默认每个码 10 张、7 天有效、生成 30 个
+python3 tools/gift_codes.py --tickets 5 --days 3 --count 100 --note "直播间"
+python3 tools/gift_codes.py --list                            # 查看发过的批次
+```
+
+- 码写到 `gift-codes/`（不进仓库），批次记录在 `tools/gift_batches.json`。
+- 离线校验，不联网：码里带签名、张数、批次和截止日。发新码不需要重新上传小工具。
+- 同一批次每台手机只能领一次，所以一个码可以直接发到粉丝群；想让同一个人再领，就发新批次。
+- 码转发出去别人也能用，校验逻辑在前端也可能被破解：单个码的张数别给太多，有效期短一点。
+- `src/js/gift.js` 里的密钥 `K` 不要改，改了之前发出的码会全部失效。
+
 ## 宣传片
 
 `promo/单词手账-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音用 app 里的真人录音。隐藏款只露出光缝里的一窄条。

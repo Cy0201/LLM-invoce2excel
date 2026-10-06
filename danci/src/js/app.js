@@ -29,7 +29,7 @@
     v: 3, prog: {}, days: [], today: { d: '', n: 0 },
     set: { count: 20, order: 'rand', auto: true, next: true, sound: true, mode: 'en2zh' },
     cur: 0, tickets: [], pity: { sr: 0, ssr: 0, ur: 0 }, dust: 0, cards: {},
-    stat: { draws: 0, tests: 0, best: 0 }, welcome: false
+    stat: { draws: 0, tests: 0, best: 0 }, welcome: false, gifts: {}
   };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function normalize(raw) {
@@ -39,6 +39,7 @@
     st.stat = Object.assign({}, DEF.stat, st.stat || {});
     if (!Array.isArray(st.tickets)) st.tickets = [];
     if (!st.cards || typeof st.cards !== 'object') st.cards = {};
+    if (!st.gifts || typeof st.gifts !== 'object') st.gifts = {};
     if (!st.prog || typeof st.prog !== 'object') st.prog = {};
     if (!Array.isArray(st.days)) st.days = [];
     if (!(st.cur >= 0 && st.cur < NG)) st.cur = 0;
@@ -553,6 +554,73 @@
     });
   }
 
+  /* ================= 来信：兑换码 =================
+   * 入口藏在首页卡片的蜡封上：长按，或连点三下。码的格式和校验见 gift.js，生成见 tools/gift_codes.py。
+   * 同一批次每台手机只能领一次。 */
+  (function () {
+    const host = $('#hCont');
+    let timer = null, taps = 0, tapT = null, fired = false;
+    const start = e => {
+      const c = e.target.closest('.charm'); if (!c) return;
+      fired = false; c.classList.remove('pop'); c.classList.add('press');
+      clearTimeout(timer); timer = setTimeout(() => { fired = true; c.classList.remove('press'); openLetter(); }, 650);
+    };
+    const end = () => {
+      clearTimeout(timer);
+      const c = host.querySelector('.charm.press'); if (!c) return;
+      c.classList.remove('press'); c.classList.add('pop'); setTimeout(() => c.classList.remove('pop'), 460);
+    };
+    host.addEventListener('pointerdown', start);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => host.addEventListener(ev, end));
+    host.addEventListener('contextmenu', e => { if (e.target.closest('.charm')) e.preventDefault(); });
+    host.addEventListener('click', e => {
+      if (!e.target.closest('.charm') || fired) return;
+      taps++; clearTimeout(tapT); tapT = setTimeout(() => { taps = 0; }, 900);
+      if (taps >= 3) { taps = 0; openLetter(); }
+    });
+  })();
+  function openLetter() {
+    if (!window.GiftCode || !$('#letter').hidden) return;
+    unlockAudio();
+    const w = $('#letter');
+    w.hidden = false; document.documentElement.classList.add('lock');
+    $('#ltEnv').className = 'env';
+    $('#ltForm').hidden = false; $('#ltDone').hidden = true; $('#ltErr').textContent = ''; $('#ltIn').value = '';
+    requestAnimationFrame(() => w.classList.add('on'));
+    sfx('flick');
+  }
+  function closeLetter() {
+    const w = $('#letter'); w.classList.remove('on');
+    setTimeout(() => {
+      w.hidden = true;
+      if ($('#reveal').hidden && $('#share').hidden && $('#viewer').hidden) document.documentElement.classList.remove('lock');
+      if (view === 'home') renderHome();
+    }, 250);
+  }
+  function redeem() {
+    const r = GiftCode.parse($('#ltIn').value), env = $('#ltEnv');
+    const fail = msg => { $('#ltErr').textContent = msg; env.classList.remove('shake'); void env.offsetWidth; env.classList.add('shake'); sfx('bad'); };
+    if (!r.ok) { fail(r.err === 'format' ? '兑换码是 12 位' : r.err === 'expired' ? '这个兑换码已经过期了' : '这个兑换码不对'); return; }
+    if (S.gifts[r.batch]) { fail('这一批你已经领过了'); return; }
+    S.gifts[r.batch] = { c: r.code, n: r.n, d: dayKey() };
+    addTickets(r.n, 1);
+    $('#ltIn').blur();
+    $('#ltN').textContent = '×' + r.n; $('#ltN2').textContent = r.n;
+    $('#ltForm').hidden = true;
+    sfx('open');
+    env.classList.add('crack');
+    setTimeout(() => env.classList.add('open'), 280);
+    setTimeout(() => env.classList.add('open2'), 560);
+    setTimeout(() => { env.classList.add('out'); sfx('r3'); confettiBurst(4, '#ltCf', '#letter', .3); }, 720);
+    setTimeout(() => { $('#ltDone').hidden = false; }, 1150);
+  }
+  $('#ltIn').addEventListener('input', e => { const el = e.target, f = GiftCode.fmt(el.value); if (el.value !== f) el.value = f; $('#ltErr').textContent = ''; });
+  $('#ltIn').addEventListener('keydown', e => { if (e.key === 'Enter') redeem(); });
+  $('#ltGo').addEventListener('click', redeem);
+  $('#ltX').addEventListener('click', closeLetter);
+  $('#ltKeep').addEventListener('click', closeLetter);
+  $('#ltDraw').addEventListener('click', () => { closeLetter(); show('draw'); });
+
   /* ================= 答题 ================= */
   let Q = null;
   const senses = t => t.replace(/【[^】]*】/g, '').split(/[；;]/).map(x => x.trim()).filter(Boolean);
@@ -887,9 +955,9 @@
   /* ---------- 揭晓 ---------- */
   // 轻量彩纸（Canvas 2D，不依赖 Worker）
   const REDUCE = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  function confettiBurst(rank) {
+  function confettiBurst(rank, cvSel, hostSel, yAt) {
     if (REDUCE) return;
-    const c = $('#cf'), dpr = Math.min(2, window.devicePixelRatio || 1), W = window.innerWidth, H = window.innerHeight;
+    const c = $(cvSel || '#cf'), host = $(hostSel || '#reveal'), dpr = Math.min(2, window.devicePixelRatio || 1), W = window.innerWidth, H = window.innerHeight;
     c.width = W * dpr; c.height = H * dpr;
     const ctx = c.getContext('2d'); if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -897,7 +965,7 @@
     const ps = [];
     for (let i = 0; i < (rank >= 5 ? 130 : 80); i++) {
       const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 9;
-      ps.push({ x: W / 2, y: H * .45, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 5, s: 4 + Math.random() * 5, c: pick(colors), r: Math.random() * 6, vr: (Math.random() - .5) * .3, sq: Math.random() < .5, life: 0 });
+      ps.push({ x: W / 2, y: H * (yAt || .45), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 5, s: 4 + Math.random() * 5, c: pick(colors), r: Math.random() * 6, vr: (Math.random() - .5) * .3, sq: Math.random() < .5, life: 0 });
     }
     const step = () => {
       ctx.clearRect(0, 0, W, H);
@@ -913,7 +981,7 @@
         ctx.restore();
       });
       ctx.globalAlpha = 1;
-      if (alive && !$('#reveal').hidden) requestAnimationFrame(step); else ctx.clearRect(0, 0, W, H);
+      if (alive && !host.hidden) requestAnimationFrame(step); else ctx.clearRect(0, 0, W, H);
     };
     requestAnimationFrame(step);
   }
