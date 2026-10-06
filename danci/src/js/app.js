@@ -249,7 +249,7 @@
    * audioSession = playback 让静音键不再静掉网页声音（iOS 17+）。 */
   const TTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
-  const SILENT = 'audio/fx/silent.mp3';  // 容器 CSP 不允许 <audio> 用 data: 地址，用包内文件
+  const SILENT = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NwwAAAAAAAAAAAAEluZm8AAAAPAAAABgAAAykAWlpaWlpaWlpaWlpaWlpaWnt7e3t7e3t7e3t7e3t7e3t7nJycnJycnJycnJycnJycnL29vb29vb29vb29vb29vb293t7e3t7e3t7e3t7e3t7e3t7/////////////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQEUQAAAAAAAAMpso/G6AAAAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NCxKMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NAxKQAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80LEowAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
   function clips() { return window.AUDIO_INLINE || null; }
   function sfxClips() { return window.SFX_INLINE || null; }
   function bytesOf(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
@@ -297,10 +297,10 @@
       if (p && p.then) p.then(good, bad);
     } catch (e) { bad(); }
   }
-  function mediaPlay(el, src, vol, onend) {
+  function mediaPlay(el, b64, vol, onend) {
     try {
       el.onended = onend || null; el.onerror = onend || null;
-      el.src = src; el.volume = vol == null ? 1 : vol;
+      el.src = 'data:audio/mpeg;base64,' + b64; el.volume = vol == null ? 1 : vol;
       const p = el.play();
       if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { if (onend) onend(); });
       return true;
@@ -313,9 +313,7 @@
     wakeAC();
     const fallback = () => {
       if (opt.voice && my !== token) return;
-      // 音效用包内 audio/fx/*.mp3（容器不允许 <audio> 播 data: 地址）
-      const src = key[0] === 's' ? 'audio/fx/' + key.slice(1) + '.mp3' : 'data:audio/mpeg;base64,' + b64;
-      mediaPlay(opt.voice ? voiceEl : sfxEls[sfxIdx++ % sfxEls.length], src, opt.vol, onend);
+      mediaPlay(opt.voice ? voiceEl : sfxEls[sfxIdx++ % sfxEls.length], b64, opt.vol, onend);
     };
     if (!acRunning()) { fallback(); return; }
     decode(key, b64, buf => {

@@ -291,6 +291,12 @@ def referenced_ok():
                     bad.append((os.path.relpath(p, DIST), ref))
             for m in re.finditer(r"'(img/(?:art|bg|charm|icon3d)/)' \+", text):
                 pass
+    # 上传平台只接受这些文件类型
+    ok_ext = {'.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.css', '.js', '.json', '.html', '.woff', '.woff2'}
+    for root, _, files in os.walk(DIST):
+        for n in files:
+            if os.path.splitext(n)[1].lower() not in ok_ext:
+                bad.append(('文件类型不支持', os.path.relpath(os.path.join(root, n), DIST)))
     # 运行时拼出来的路径
     for vid in re.findall(r"id: '(\w+)', en: ", open(os.path.join(DIST, 'js', 'catalog.js'), encoding='utf-8').read()):
         if not os.path.exists(os.path.join(DIST, 'img', 'art', vid + '.webp')):
