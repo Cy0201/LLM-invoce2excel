@@ -109,7 +109,7 @@
   // E：十枚火漆
   var SE = ['star', 'bow', 'heart', 'diamond', 'pearl', 'sunset', 'crown', 'moon', 'aurora', 'midnight'];
   var seals = SE.map(function (id) { return { id: id, rank: C.SEAL[id].rank, el: sealEl(id, $('#eSeals')) }; });
-  var ST = C.SEAL_TIERS;
+  var ST = C.SEAL_TIERS, TI_MAP = [0, 1, 2, 4];  // 片中四档高亮：素漆、雅漆、金漆、秘漆
   var bigSeal = sealEl('midnight', $('#bigSeal'));
 
   // F：收尾三张卡
@@ -472,7 +472,7 @@
       var a = rot + j / 10 * 6.283, depth = (Math.sin(a) + 1) / 2;
       var x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a), size = 74 + 44 * depth;
       var st = 14.45 + j * .05, pop = E.outBack(seg(t, st, st + .32));
-      var hot = ti >= 0 && s.rank === ti, k = ti < 0 ? 1 : hot ? 1.32 + .08 * Math.sin(Math.PI * seg(tAge, 0, .2)) : .9;
+      var hot = ti >= 0 && s.rank === TI_MAP[ti], k = ti < 0 ? 1 : hot ? 1.32 + .08 * Math.sin(Math.PI * seg(tAge, 0, .2)) : .9;
       var op = ti < 0 ? 1 : hot ? 1 : .38;
       if (s.id === 'midnight') { s.el.style.display = 'none'; return; }
       op *= 1 - focus;
@@ -504,7 +504,7 @@
     // 等级文字
     var eT = $('#eT');
     if (ti >= 0) {
-      setText(eT.firstChild, 'et', ST[ti].cn); setText(eT.lastChild, 'er', ST[ti].v.map(function (x) { return x.cn; }).join(' · '));
+      setText(eT.firstChild, 'et', ST[TI_MAP[ti]].cn); setText(eT.lastChild, 'er', ST[TI_MAP[ti]].v.map(function (x) { return x.cn; }).join(' · '));
       var e = E.out3(seg(tAge, 0, .2));
       eT.style.opacity = e * (1 - focus); eT.style.transform = 'scale(' + lerp(1.2, 1, E.outExpo(seg(tAge, 0, .35))) + ')';
       eT.style.filter = e < 1 ? 'blur(' + (1 - e) * 8 + 'px)' : '';

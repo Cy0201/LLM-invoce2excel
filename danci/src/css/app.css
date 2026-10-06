@@ -653,3 +653,10 @@ img{max-width:100%;display:block}
 
 /* 闪粉纹理：换成预渲染的无缝位图。cards-css 现场生成的 SVG（feTurbulence + 发光滤镜）在 iOS 上平铺会出现一道道横纹，也更耗 GPU */
 .holo-card{--glitter:url(../img/tex/glitter.webp)}
+
+/* 火漆概率表：星座漆一行放不下时换行；隐藏档只写问号 */
+.sealodds .so{height:auto;min-height:44px;padding:6px 0}
+.sealodds .so span{flex-wrap:wrap}
+.sealodds .so img{width:26px;height:26px;margin:2px}
+.sealodds .so .qm{font:600 14px var(--sc);letter-spacing:.3em;color:var(--ink3);font-style:normal}
+.grow.hid .glab b{background:linear-gradient(180deg,#FFF3D6 10%,#E9C27E 60%,#FFF0CF 95%);-webkit-background-clip:text;background-clip:text;color:transparent}

@@ -937,7 +937,7 @@
     openSheet(`<h3 class="sh-h">概率与保底<span>${m > 1 ? '当前使用 ' + fmtM(m) + ' 加成券' : '当前为基础概率'}</span></h3>
       <div class="ladder plain">${ladderHTML(m)}</div>
       <h3 class="sh-h sm">火漆<span>独立抽取</span></h3>
-      <div class="sealodds">${SEAL_TIERS.slice().reverse().map(t => `<div class="so"><b>${t.cn}</b><span>${t.v.map(x => `<img src="img/seal/${x.id}.webp" alt="">`).join('')}</span><em>${fmtP(t.rate)}</em></div>`).join('')}</div>
+      <div class="sealodds">${SEAL_TIERS.slice().reverse().map(t => `<div class="so${t.hidden ? ' hid' : ''}"><b>${t.cn}</b><span>${t.hidden ? '<i class="qm">？？？</i>' : t.v.map(x => `<img src="img/seal/${x.id}.webp" alt="">`).join('')}</span><em>${fmtP(t.rate)}</em></div>`).join('')}</div>
       <div class="rule">${RULE_HTML}<br>重复的卡化为星尘，${DUST_PER_TICKET} 星尘换 1 张抽卡券</div>`);
   }
   function openDust() {
@@ -1012,7 +1012,7 @@
     $('#rvX').addEventListener('click', revealClose);
     $('#rvShare').addEventListener('click', () => shareCard(r.k, r.vid, r.seal));
     $('#rvOk').addEventListener('click', () => { if (ticketCount()) { revealClose(); doDraw(1); } else { revealClose(); show('album'); } });
-    const hype = Math.max(r.rank, r.srank + 2);
+    const hype = Math.max(r.rank, SEAL[r.seal].hype);
     const delay = hype >= 4 ? 1500 : hype >= 3 ? 1100 : 700;
     if (hype >= 3) sfx('charge', hype >= 5 ? 1 : .8, (delay - 1050) / 1000);
     if (r.srank >= 1) sfx('stamp', .8, delay / 1000 + .5);
@@ -1046,7 +1046,7 @@
     $('#rvX').addEventListener('click', revealClose);
     $('#rvOk').addEventListener('click', () => { revealClose(); show('album'); });
     $('#rvAgain').addEventListener('click', () => { revealClose(); doDraw(10); });
-    const bh = Math.max(best.rank, best.srank + 2);
+    const bh = Math.max(best.rank, SEAL[best.seal].hype);
     list.forEach((x, i) => sfx('flick', .6, .15 + i * .11));
     if (bh >= 3) sfx('charge', .8, .15);
     setTimeout(() => { sfxRare(bh); if (bh >= 3) confettiBurst(bh); }, 1200);
@@ -1099,7 +1099,7 @@
     const counts = ORDER.map(t => [t, tierOwned(t)]).reverse();
     const col = ws.filter(w => ownVids(w.k).length).length;
     $('#aBody').innerHTML = `
-      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 火漆 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
+      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 火漆 <b>${Object.keys(sealsOwned()).filter(id => SEAL[id] && !SEAL[id].hidden).length}</b> / ${Object.keys(SEAL).filter(id => !SEAL[id].hidden).length}${Object.keys(sealsOwned()).some(id => SEAL[id] && SEAL[id].hidden) ? ' · 隐藏 <b>' + Object.keys(sealsOwned()).filter(id => SEAL[id] && SEAL[id].hidden).length + '</b>' : ''}</span></header>
       <div class="rar">${counts.map(x => `<span class="gl ${tierCls(x[0])}"><i></i>${TIER[x[0]].cn} ${x[1]}</span>`).join('')}</div>
       <div class="pagec gl" id="aPage">
         <div class="pt"><span>第 ${g + 1} 组<small>No.${pad3(ws[0].i)}–${pad3(ws[ws.length - 1].i)}</small></span><span><b>${col}</b> / ${ws.length}</span></div>
@@ -1168,8 +1168,12 @@
       rows.appendChild(row);
     });
     const so = sealsOwned();
-    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">火漆图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
-      SEAL_TIERS.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span></div><div class="gseals">` +
+    // 隐藏 / 超级隐藏火漆不在图鉴里留位置，抽到之后才单独出现
+    const vis = SEAL_TIERS.filter(t => !t.hidden), hid = SEAL_TIERS.filter(t => t.hidden).reduce((a, t) => a.concat(t.v.filter(x => so[x.id])), []);
+    const visTotal = vis.reduce((a, t) => a + t.v.length, 0), visOwn = vis.reduce((a, t) => a + t.v.filter(x => so[x.id]).length, 0);
+    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">火漆图鉴<span>已收集 ${visOwn} / ${visTotal}</span></h2><div class="gsub">Cachets de cire</div>` +
+      (hid.length ? `<div class="grow hid"><div class="glab"><b>隐藏火漆</b><span>${hid.length} 枚</span></div><div class="gseals">` + hid.map(x => `<div class="gseal"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}<span>${x.tcn}</span></p></div>`).join('') + '</div></div>' : '') +
+      vis.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span></div><div class="gseals">` +
         t.v.map(x => `<div class="gseal${so[x.id] ? '' : ' locked'}"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}</p></div>`).join('') + '</div></div>').join(''));
     requestAnimationFrame(() => $$('#gRows .gcell').forEach(cell => { const box = cell.querySelector('.gbox'); const hc = box.querySelector('.holo-card'); if (hc) { const vid = Array.prototype.slice.call(hc.classList).filter(c => c.indexOf('v-') === 0)[0].slice(2); CardKit.fit(box, vid); } }));
   }
