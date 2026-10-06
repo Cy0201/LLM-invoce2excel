@@ -418,7 +418,8 @@
       var x = dd * 205 * (1 - ex), z = -ad * 240 - ex * 300, ry = cl(-dd * 42, -65, 65) * (1 - ex);
       d.c.wrap.style.transform = 'perspective(1100px) translate3d(' + x + 'px,' + (-ex * 40) + 'px,' + z + 'px) rotateY(' + ry + 'deg)';
       // 景深：离中心越远越虚
-      d.c.wrap.style.filter = ad > .15 ? 'blur(' + Math.min(3.2, (ad - .15) * 2.4).toFixed(2) + 'px) brightness(' + (1 - Math.min(.3, ad * .18)).toFixed(3) + ')' : 'none';
+      // 滤镜始终保留（不在 none 和 blur 之间切换），合成层结构稳定，截图不会截到没画完的帧
+      d.c.wrap.style.filter = 'blur(' + (ad > .15 ? Math.min(3.2, (ad - .15) * 2.4) : 0).toFixed(2) + 'px) brightness(' + (1 - Math.min(.3, ad * .18)).toFixed(3) + ')';
       d.c.wrap.style.opacity = op * (1 - ex);
       d.c.wrap.style.zIndex = String(100 - Math.round(ad * 10));
       d.c.wrap.style.display = op * (1 - ex) > .01 ? 'block' : 'none';

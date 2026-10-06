@@ -21,9 +21,11 @@ function resolve(u) {
   }).listen(0);
   await new Promise(r => srv.on('listening', r));
   const url = 'http://127.0.0.1:' + srv.address().port + '/';
-  const browser = await chromium.launch({ args: ['--force-color-profile=srgb', '--disable-lcd-text'] });
+  // 截图前所有图块都要画完，否则偶尔会截到没画完的帧（大块空白、闪一下）
+  const browser = await chromium.launch({ args: ['--force-color-profile=srgb', '--disable-lcd-text', '--run-all-compositor-stages-before-draw', '--disable-checker-imaging'].concat(process.env.NOGPU ? ['--disable-gpu'] : []) });
   const frames = [];
-  for (let f = Math.round(T0 * FPS); f < Math.round(T1 * FPS); f++) frames.push(f);
+  if (process.env.REDO) process.env.REDO.split(',').forEach(x => frames.push(+x));  // 只重渲指定帧
+  else for (let f = Math.round(T0 * FPS); f < Math.round(T1 * FPS); f++) frames.push(f);
   const chunk = Math.ceil(frames.length / PAR);
   const t0 = Date.now();
   await Promise.all(Array.from({ length: PAR }, async (_, w) => {
@@ -39,7 +41,7 @@ function resolve(u) {
     await p.evaluate(() => window.warm());
     await p.waitForTimeout(500);
     for (const f of mine) {
-      await p.evaluate(t => window.render(t), f / FPS);
+      await p.evaluate(t => { window.render(t); return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }, f / FPS);
       await p.screenshot({ path: path.join(OUT, String(f).padStart(4, '0') + '.jpg'), type: 'jpeg', quality: 95 });
       if (f % 60 === 0) console.log('frame', f, ((Date.now() - t0) / 1000).toFixed(0) + 's');
     }
