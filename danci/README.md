@@ -51,17 +51,17 @@ node tools/e2e.js                  # 可选：模拟容器把主要流程点一�
 
 入口藏在首页卡片右上角的蜡封上：**长按**，或**连点三下**，会打开一封信，输入兑换码后拆开就到账。
 
+- **防伪**：码是 12 位随机字符（60 位熵），一次生成好；小工具里只放每个码的指纹（加盐 SHA-256 迭代 4096 次，`src/js/gift-db.js`），不含任何能造码的密钥。看得到代码也推不出码。
+- **全年周码**：已生成 2026-10-05 起 52 周，每周一批 30 个码、每个 10 张；周一生效，下周三截止。同一批每台手机限领一次，所以一个码可以直接发到粉丝群。
+- 码在 `gift-codes/`（不进仓库，务必另存）。批次记录在 `tools/gift_batches.json`。
+
 ```bash
-python3 tools/gift_codes.py                                   # 默认每个码 10 张、7 天有效、生成 30 个
-python3 tools/gift_codes.py --tickets 5 --days 3 --count 100 --note "直播间"
-python3 tools/gift_codes.py --list                            # 查看发过的批次
+python3 tools/gift_codes.py --list                                            # 查看批次
+python3 tools/gift_codes.py --extra --tickets 5 --days 3 --count 50 --note 直播  # 追加临时码（需重新打包上传）
+python3 tools/gift_codes.py --year --force                                     # 整年重来（已发的码全部作废）
 ```
 
-- 码写到 `gift-codes/`（不进仓库），批次记录在 `tools/gift_batches.json`。
-- 离线校验，不联网：码里带签名、张数、批次和截止日。发新码不需要重新上传小工具。
-- 同一批次每台手机只能领一次，所以一个码可以直接发到粉丝群；想让同一个人再领，就发新批次。
-- 码转发出去别人也能用，校验逻辑在前端也可能被破解：单个码的张数别给太多，有效期短一点。
-- `src/js/gift.js` 里的密钥 `K` 不要改，改了之前发出的码会全部失效。
+- 防不住的：码被转发、手机改日期、越狱后直接改本地存档。前两种影响很小（每台手机每批只能领一次）。
 
 ## 宣传片
 

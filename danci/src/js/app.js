@@ -555,7 +555,7 @@
   }
 
   /* ================= 来信：兑换码 =================
-   * 入口藏在首页卡片的蜡封上：长按，或连点三下。码的格式和校验见 gift.js，生成见 tools/gift_codes.py。
+   * 入口藏在首页卡片的蜡封上：长按，或连点三下。校验见 gift.js（只存指纹），生成见 tools/gift_codes.py。
    * 同一批次每台手机只能领一次。 */
   (function () {
     const host = $('#hCont');
@@ -600,7 +600,7 @@
   function redeem() {
     const r = GiftCode.parse($('#ltIn').value), env = $('#ltEnv');
     const fail = msg => { $('#ltErr').textContent = msg; env.classList.remove('shake'); void env.offsetWidth; env.classList.add('shake'); sfx('bad'); };
-    if (!r.ok) { fail(r.err === 'format' ? '兑换码是 12 位' : r.err === 'expired' ? '这个兑换码已经过期了' : '这个兑换码不对'); return; }
+    if (!r.ok) { fail(r.err === 'format' ? '兑换码是 12 位' : r.err === 'expired' ? '这个兑换码已经过期了' : r.err === 'early' ? GiftCode.dayStr(r.from) + '起才能用' : '这个兑换码不对'); return; }
     if (S.gifts[r.batch]) { fail('这一批你已经领过了'); return; }
     S.gifts[r.batch] = { c: r.code, n: r.n, d: dayKey() };
     addTickets(r.n, 1);
