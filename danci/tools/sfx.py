@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""音效合成：全部用 numpy 现场合成（无版权素材），输出 src/js/sfx-clips.js（MP3，Base64 内联）。
+"""音效合成：全部用 numpy 现场合成（无版权素材），输出 src/js/sfx-clips.js（MP3，Base64 内联）和 src/audio/fx/*.mp3。
 用法：python3 tools/sfx.py [--wav 目录]     # --wav 时另存一份 wav 方便试听
 依赖：numpy scipy，ffmpeg（libmp3lame）
 """
@@ -16,6 +16,7 @@ from scipy.io import wavfile
 SR = 44100
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'src', 'js', 'sfx-clips.js')
+FX_DIR = os.path.join(ROOT, 'src', 'audio', 'fx')
 rs = np.random.RandomState(11)
 
 
@@ -342,10 +343,16 @@ def main():
             m = os.path.join(tmp, k + '.mp3')
             subprocess.check_call(['ffmpeg', '-loglevel', 'error', '-y', '-i', w, '-ac', '1', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '96k', m])
             data = open(m, 'rb').read()
+            # 同一份 MP3 也放进包里：Web Audio 起不来时 <audio> 用（容器不允许 <audio> 播 data: 地址）
+            os.makedirs(FX_DIR, exist_ok=True)
+            open(os.path.join(FX_DIR, k + '.mp3'), 'wb').write(data)
             total += len(data)
             out[k] = base64.b64encode(data).decode()
             print('sfx %-7s %.2fs %5d bytes' % (k, len(x) / SR, len(data)))
-    js = '/* 音效（MP3，Base64），由 tools/sfx.py 合成生成，app.js 通过 Web Audio / <audio> 播放 */\nwindow.SFX_INLINE={' + \
+    # 解锁 <audio> 用的静音文件
+    subprocess.check_call(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', '0.08',
+                           '-c:a', 'libmp3lame', '-b:a', '32k', os.path.join(FX_DIR, 'silent.mp3')])
+    js = '/* 音效（MP3，Base64），由 tools/sfx.py 合成生成，app.js 通过 Web Audio 播放；同名文件在 audio/fx/ 供 <audio> 兜底 */\nwindow.SFX_INLINE={' + \
         ','.join('"%s":"%s"' % (k, v) for k, v in out.items()) + '};\n'
     open(OUT, 'w').write(js)
     print('写入', os.path.relpath(OUT, ROOT), '%d KB' % (len(js) // 1024))

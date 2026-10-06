@@ -647,3 +647,15 @@ img{max-width:100%;display:block}
 .lt-acts{display:-webkit-box;display:flex}
 .lt-acts .btn{-webkit-box-flex:1;flex:1}
 .lt-acts .btn+.btn{margin-left:12px}
+
+/* 例句朗读按钮 */
+.fb-l,.qline{position:relative;padding-right:46px}
+.qline{text-align:left}
+.lnp{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;display:-webkit-box;display:flex;align-items:center;justify-content:center;color:var(--ink2);background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 1px rgba(31,28,36,.08),0 4px 10px rgba(150,110,180,.15)}
+.lnp .ic{width:16px;height:16px}
+.lnp.on{color:#1F1C24;background:var(--holo);box-shadow:0 0 0 4px rgba(220,203,250,.35);-webkit-animation:lnpOn 1.2s ease-in-out infinite;animation:lnpOn 1.2s ease-in-out infinite}
+@-webkit-keyframes lnpOn{50%{box-shadow:0 0 0 8px rgba(220,203,250,.12)}}
+@keyframes lnpOn{50%{box-shadow:0 0 0 8px rgba(220,203,250,.12)}}
+.lnp.txt{position:static;width:auto;height:30px;padding:0 12px 0 9px;border-radius:99px;margin-left:8px;font:500 12px var(--sa);letter-spacing:.08em;color:#fff;background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.lnp.txt .ic{margin-right:4px}
+.lnp.txt.on{color:#1F1C24;background:var(--holo)}

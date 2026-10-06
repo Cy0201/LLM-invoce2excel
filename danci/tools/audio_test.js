@@ -41,13 +41,16 @@ function hooks(mode) {
       return s0.apply(this, arguments);
     };
   }
-  const p0 = HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.play = function () {
-    const src = this.src || '';
-    const r = p0.apply(this, arguments);
-    if (src.length > 2000) { log('media', src.length); if (r && r.then) r.then(() => log('media-ok', src.length), e => log('media-FAIL', String(e && e.name))); }
-    return r;
-  };
+  // <audio>：记录真正「有声」的播放（没暂停、没静音、不是解锁用的静音文件）
+  const els = [], A0 = window.Audio;
+  window.Audio = function (src) { const a = new A0(src); els.push(a); a.addEventListener('play', () => { a._pid = (a._pid || 0) + 1; }); a.addEventListener('error', () => log('media-FAIL', a.src.replace(/^.*\/audio\//, ''))); return a; };
+  window.Audio.prototype = A0.prototype;
+  setInterval(() => els.forEach(a => {
+    if (a.paused || a.muted || !a.src || /silent/.test(a.src) || a.currentTime <= 0) return;
+    const id = a.src + '#' + a._pid;
+    if (a._heard === id) return;
+    a._heard = id; log('media-ok', a.src.replace(/^.*\/audio\//, '') + '@' + a.currentTime.toFixed(1));
+  }), 30);
 }
 
 (async () => {
@@ -75,6 +78,9 @@ function hooks(mode) {
     const j = await p.evaluate(() => { const it = document.querySelector('#qStage .qw').textContent; const W = window.__danci.WORDS.find(w => w.w === it); return Array.prototype.slice.call(document.querySelectorAll('#opts .op .t')).map(x => x.textContent).indexOf(W.cp + ' ' + W.cm); });
     await p.tap(`#opts .op[data-j="${j}"]`); await p.waitForTimeout(700);
     steps.push(['答对', await since(m)]);
+    m = await mark();
+    await p.tap('#qFb [data-line]'); await p.waitForTimeout(4500);
+    steps.push(['点例句', await since(m)]);
     await p.tap('#qQuit'); await p.waitForTimeout(200); await p.tap('#modalActs .btn:last-child'); await p.waitForTimeout(300);
     // 3. 单抽（强制出隐藏款） + 十连
     await p.evaluate(() => { const S = window.__danci.S; S.tickets.push({ n: 30, m: 1 }); window.__danci.show('draw'); });

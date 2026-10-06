@@ -304,6 +304,19 @@ def referenced_ok():
     for k in ['home', 'quiz', 'result', 'album', 'reveal', 'gallery', 'test', 'sky', 'dusk', 'night']:
         if not os.path.exists(os.path.join(DIST, 'img', 'bg', k + '.webp')):
             bad.append(('bg', k))
+    # 发音 / 例句（每组一个 m4a）和音效兜底文件
+    vm = open(os.path.join(DIST, 'js', 'voice-map.js'), encoding='utf-8').read()
+    vmap = json.loads(re.sub(r'([{,])(\w+):', r'\1"\2":', vm[vm.index('{'):vm.rindex('}') + 1]))
+    for kind in ('w', 's'):
+        assert len(vmap[kind]) == 688, '%s 段数 %d' % (kind, len(vmap[kind]))
+        for g in range((len(vmap[kind]) + vmap['g'] - 1) // vmap['g']):
+            if not os.path.exists(os.path.join(DIST, 'audio', kind, '%02d.m4a' % (g + 1))):
+                bad.append(('voice', '%s/%02d' % (kind, g + 1)))
+    fx = open(os.path.join(DIST, 'js', 'sfx-clips.js'), encoding='utf-8').read()
+    for name in re.findall(r'"(\w+)":"', fx) + ['silent']:
+        if not os.path.exists(os.path.join(DIST, 'audio', 'fx', name + '.mp3')):
+            bad.append(('fx', name))
+    log('音频：发音/例句各 688 段，音效 %d 个' % len(re.findall(r'"(\w+)":"', fx)))
     return bad
 
 

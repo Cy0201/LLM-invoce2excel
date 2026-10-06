@@ -8,7 +8,7 @@
 
 ## 功能
 
-- **练习**：英选中、中选英、看义拼写（例句挖空）、听音拼写、闪卡、错词本。每个词都有真人发音、例句、中文翻译，引用的诗文名言会标出处。
+- **练习**：英选中、中选英、看义拼写（例句挖空）、听音拼写、闪卡、错词本。每个词都有发音、例句朗读、中文翻译，引用的诗文名言会标出处。
 - **全部测试**：从 688 词里随机抽 25 题。每答对 1 题得 1 张抽卡券。
 - **正确率加成**：只加在 SSR 及以上：
   - 60% 以上 ×1.2
@@ -77,8 +77,13 @@ ffmpeg -framerate 30 -i /tmp/frames/%04d.jpg -i /tmp/music.wav -c:v libx264 -crf
 
 ## 声音
 
-- 发音：688 词真人录音（`audio-clips.js`）。音效：`tools/sfx.py` 合成，生成 `sfx-clips.js`。
-- 播放优先走 Web Audio，起不来时退回 `<audio>`；iOS 每次手势都会重试解锁，并设置 `audioSession = playback`，静音键打开时也能出声（iOS 17+）。
+- **发音与例句**：开源 TTS（Kokoro-82M，Apache-2.0，可商用）离线生成，声线 Fable（英式温柔男声），加了一点柔和混响。
+  688 个单词 + 688 句例句，每组 20 段拼成一个 m4a（`src/audio/w/`、`src/audio/s/`），索引在 `src/js/voice-map.js`。
+  例句旁的小喇叭、首页「TODAY」卡、卡片详情的「例句」按钮都能听整句。
+  重新生成：`pip install kokoro-onnx soundfile scipy` 后运行 `python3 tools/tts.py`（首次会下载约 350MB 模型到 `tools/.tts/`）。
+- **音效**：`tools/sfx.py` 合成，内联在 `sfx-clips.js` 走 Web Audio，同名 mp3 在 `src/audio/fx/` 给 `<audio>` 兜底。
+- 容器 CSP 不允许 `<audio>` 用 `data:` 地址，所以所有 `<audio>` 播放都用包内文件；`<audio>` 不受 iOS 静音键影响。
+- iOS 每次手势都会重试解锁，并设置 `audioSession = playback`（iOS 17+）。
 - `node tools/audio_test.js`：在普通、模拟 iOS、无 Web Audio 三种环境下检查每一步都真正出声。
 
 ## 目录

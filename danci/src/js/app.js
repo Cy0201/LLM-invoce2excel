@@ -242,19 +242,19 @@
   function collectedVariants() { const s = {}; Object.keys(S.cards).forEach(k => ownVids(k).forEach(id => { s[id] = 1; })); return Object.keys(s).length; }
   const DUST_PER_TICKET = 20;
 
-  /* ================= 声音：发音录音 + 音效 =================
-   * Web Audio 优先（低延迟、可叠加）；上下文起不来（容器限制、没解锁）时退回 <audio> 元素；
-   * 没有录音的词才用系统朗读。
-   * iOS：只有 touchend / click 里的 resume() 才算用户手势，所以每次手势都重试，直到真正跑起来；
-   * audioSession = playback 让静音键不再静掉网页声音（iOS 17+）。 */
+  /* ================= 声音：发音 / 例句 / 音效 =================
+   * 发音和例句：包内 m4a（tools/tts.py 生成，每组 20 段拼成一个文件），用 <audio> 播放并跳到对应的一段。
+   *   容器 CSP 不允许 <audio> 用 data: 地址，只能引用包内文件；<audio> 也不受 iOS 静音键影响。
+   * 音效：Web Audio 优先（低延迟、可叠加，数据内联在 sfx-clips.js）；起不来时改用包内 audio/fx/*.mp3。
+   * iOS：只有 touchend / click 里的 resume() / play() 才算用户手势，所以每次手势都重试，直到真正解锁；
+   * audioSession = playback 让静音键不再静掉 Web Audio（iOS 17+）。 */
   const TTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
-  const SILENT = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//NwwAAAAAAAAAAAAEluZm8AAAAPAAAABgAAAykAWlpaWlpaWlpaWlpaWlpaWnt7e3t7e3t7e3t7e3t7e3t7nJycnJycnJycnJycnJycnL29vb29vb29vb29vb29vb293t7e3t7e3t7e3t7e3t7e3t7/////////////////////AAAAAExhdmM2MC4zMQAAAAAAAAAAAAAAACQEUQAAAAAAAAMpso/G6AAAAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NCxKMAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NAxKQAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80LEowAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=';
-  function clips() { return window.AUDIO_INLINE || null; }
+  const SILENT = 'audio/fx/silent.mp3';
   function sfxClips() { return window.SFX_INLINE || null; }
   function bytesOf(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
   const bufCache = {}, badDecode = {};
-  let AC = null, voiceSrc = null, token = 0;
+  let AC = null;
   function getAC() {
     if (!AC) { try { const K = window.AudioContext || window.webkitAudioContext; if (K) AC = new K(); } catch (e) { AC = null; } }
     return AC;
@@ -265,7 +265,7 @@
     try { const p = ac.resume(); if (p && p.catch) p.catch(() => { }); } catch (e) { }
     try { const b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0); } catch (e) { }
   }
-  // <audio> 元素池：一个给发音，六个轮流给音效。在手势里先各播一次静音，之后才能被程序随时播放
+  // <audio> 元素：一个给发音和例句，六个轮流给音效。在手势里先各播一次静音文件，之后才能被程序随时播放
   const voiceEl = new Audio(), sfxEls = [new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio()];
   let sfxIdx = 0, mediaReady = false;
   [voiceEl].concat(sfxEls).forEach(el => { el.preload = 'auto'; el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', ''); });
@@ -274,10 +274,11 @@
     [voiceEl].concat(sfxEls).forEach(el => {
       if (el.dataset.ok || !el.paused) return;
       try {
-        el.src = SILENT; el.volume = 0;
+        if (el === voiceEl) vSrc = '';
+        el.src = SILENT;
         const p = el.play();
-        const ok = () => { el.dataset.ok = '1'; el.volume = 1; if ([voiceEl].concat(sfxEls).every(x => x.dataset.ok)) mediaReady = true; };
-        if (p && p.then) p.then(ok, () => { el.volume = 1; }); else ok();
+        const ok = () => { el.dataset.ok = '1'; if ([voiceEl].concat(sfxEls).every(x => x.dataset.ok)) mediaReady = true; };
+        if (p && p.then) p.then(ok, () => { }); else ok();
       } catch (e) { }
     });
   }
@@ -285,7 +286,7 @@
   ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
   document.addEventListener('visibilitychange', () => { if (!document.hidden && AC && AC.state !== 'running') wakeAC(); });
 
-  // 解码（带缓存）；失败的条目记下来，以后直接走 <audio>
+  // 音效
   function decode(key, b64, ok, fail) {
     if (bufCache[key]) { ok(bufCache[key]); return; }
     if (badDecode[key]) { fail(); return; }
@@ -297,80 +298,90 @@
       if (p && p.then) p.then(good, bad);
     } catch (e) { bad(); }
   }
-  function mediaPlay(el, b64, vol, onend) {
+  function mediaFx(name, vol) {
+    const el = sfxEls[sfxIdx++ % sfxEls.length];
     try {
-      el.onended = onend || null; el.onerror = onend || null;
-      el.src = 'data:audio/mpeg;base64,' + b64; el.volume = vol == null ? 1 : vol;
-      const p = el.play();
-      if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { if (onend) onend(); });
-      return true;
-    } catch (e) { if (onend) onend(); return false; }
+      el.src = 'audio/fx/' + name + '.mp3'; el.volume = vol == null ? 1 : vol;
+      const p = el.play(); if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { });
+    } catch (e) { }
   }
-  // 播一段 Base64 MP3。voice=true 时打断上一段发音
-  function playClip(key, b64, opt) {
-    opt = opt || {};
-    const my = opt.voice ? token : 0, onend = opt.onend;
+  function playFx(name, vol) {
+    const X = sfxClips();
     wakeAC();
-    const fallback = () => {
-      if (opt.voice && my !== token) return;
-      mediaPlay(opt.voice ? voiceEl : sfxEls[sfxIdx++ % sfxEls.length], b64, opt.vol, onend);
-    };
-    if (!acRunning()) { fallback(); return; }
-    decode(key, b64, buf => {
-      if (opt.voice && my !== token) return;
-      if (!acRunning()) { fallback(); return; }
+    if (!X || !X[name] || !acRunning()) { mediaFx(name, vol); return; }
+    decode('s' + name, X[name], buf => {
+      if (!acRunning()) { mediaFx(name, vol); return; }
       try {
         const s = AC.createBufferSource(), g = AC.createGain();
-        s.buffer = buf; g.gain.value = opt.vol == null ? 1 : opt.vol;
-        s.connect(g); g.connect(AC.destination);
-        if (onend) s.onended = () => { if (!opt.voice || my === token) onend(); };
-        s.start(AC.currentTime + (opt.delay || 0));
-        if (opt.voice) voiceSrc = s;
-      } catch (e) { fallback(); }
-    }, fallback);
+        s.buffer = buf; g.gain.value = vol == null ? 1 : vol;
+        s.connect(g); g.connect(AC.destination); s.start(0);
+      } catch (e) { mediaFx(name, vol); }
+    }, () => mediaFx(name, vol));
   }
+  function sfx(name, vol, delay) {
+    if (!S.set.sound) return;
+    if (delay > 0) setTimeout(() => playFx(name, vol), delay * 1000); else playFx(name, vol);
+  }
+
+  // 发音 / 例句：每组一个音频文件，按 VOICE_MAP 跳到对应的一段
+  let vTok = 0, vSrc = '', vStop = 0, vPoll = 0;
   function stopVoice() {
-    token++;
-    try { if (voiceSrc) voiceSrc.stop(); } catch (e) { } voiceSrc = null;
+    vTok++; clearTimeout(vStop); clearInterval(vPoll);
     try { voiceEl.pause(); } catch (e) { }
     try { if (TTS) speechSynthesis.cancel(); } catch (e) { }
+    $$('.lnp.on').forEach(b => b.classList.remove('on'));
+  }
+  function playSeg(kind, k, onend) {
+    const M = window.VOICE_MAP, seg = M && M[kind] && M[kind][k];
+    if (!seg) return false;
+    stopVoice();
+    const my = vTok, el = voiceEl, src = 'audio/' + kind + '/' + pad2(Math.floor(k / M.g) + 1) + '.m4a';
+    let tries = 0;
+    const end = () => { if (my !== vTok) return; clearInterval(vPoll); try { el.pause(); } catch (e) { } if (onend) onend(); };
+    const fail = () => { if (my !== vTok) return; clearInterval(vPoll); vSrc = ''; el.muted = false; if (onend) onend(); };
+    const seek = () => { try { el.currentTime = Math.max(0, seg[0] - .03); } catch (e) { } };
+    el.muted = true; el.onerror = fail;
+    if (vSrc !== src) { vSrc = src; el.src = src; try { el.load(); } catch (e) { } } else seek();
+    // 元数据就绪、跳到位置后再取消静音，按时长停下（段与段之间留了静音，晚停一点也听不出来）
+    vPoll = setInterval(() => {
+      if (my !== vTok) { clearInterval(vPoll); return; }
+      if (++tries > 80) { fail(); return; }
+      if (el.readyState < 1) return;
+      if (el.seeking) return;
+      if (Math.abs(el.currentTime - seg[0]) > .3) { seek(); return; }
+      clearInterval(vPoll); el.muted = false;
+      if (el.paused) { const q = el.play(); if (q && q.catch) q.catch(fail); }
+      vStop = setTimeout(end, (seg[0] + seg[1] + .06 - el.currentTime) * 1000);
+    }, 40);
+    const p = el.play(); if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { });
+    return true;
   }
   function ttsSpeak(text, onend) {
     if (!TTS) { if (onend) onend(); return; }
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = .86;
+      const u = new SpeechSynthesisUtterance(text); u.lang = 'en-GB'; u.rate = .86;
       if (onend) { u.onend = onend; u.onerror = onend; }
       speechSynthesis.speak(u);
     } catch (e) { if (onend) onend(); }
   }
   function speak(word, onend) {
-    const k = BYW[word], w = k != null ? WORDS[k] : null, CL = clips();
-    stopVoice();
-    if (!w || !CL || !CL[w.i]) { ttsSpeak(word, onend); return; }
-    playClip('w' + w.i, CL[w.i], { voice: true, onend: onend });
+    const k = BYW[word];
+    if (k != null && playSeg('w', k, onend)) return;
+    stopVoice(); ttsSpeak(word, onend);
   }
-  // 音效：合成好的 MP3（tools/sfx.py）；还没加载完时用振荡器顶一下
-  function sfx(name, vol, delay) {
-    if (!S.set.sound) return;
-    const X = sfxClips();
-    if (X && X[name]) { if (delay) setTimeout(() => playClip('s' + name, X[name], { vol: vol }), delay * 1000); else playClip('s' + name, X[name], { vol: vol }); return; }
-    const alt = { ok: [[880, .14], [1318.5, .22]], bad: [[220, .2, 'triangle', .14], [174.6, .28, 'triangle', .12]], done: [[784, .14], [988, .14], [1175, .14], [1568, .3]] }[name];
-    if (alt) tone(alt);
+  // 例句朗读：点例句旁的小喇叭
+  function speakLine(k, btn) {
+    if (btn && btn.classList.contains('on')) { stopVoice(); return; }
+    const done = () => { if (btn) btn.classList.remove('on'); };
+    if (!playSeg('s', k, done)) { stopVoice(); ttsSpeak(WORDS[k].en, done); }
+    if (btn) btn.classList.add('on');
   }
-  function tone(seq) {
-    if (!S.set.sound) return;
-    try {
-      wakeAC(); if (!acRunning()) return;
-      let t = AC.currentTime + .01;
-      seq.forEach(x => {
-        const o = AC.createOscillator(), g = AC.createGain();
-        o.type = x[2] || 'sine'; o.frequency.value = x[0];
-        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(x[3] || .12, t + .015); g.gain.exponentialRampToValueAtTime(.0001, t + x[1]);
-        o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + x[1] + .02); t += x[1] * .62;
-      });
-    } catch (e) { }
-  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-line]'); if (!b) return;
+    e.stopPropagation(); speakLine(+b.dataset.line, b);
+  });
+  const lineBtn = k => `<button type="button" class="lnp" data-line="${k}" aria-label="朗读例句">${icon('i-speaker-high')}</button>`;
   const sfxOk = () => sfx('ok');
   const sfxBad = () => sfx('bad');
   const sfxDone = () => sfx('done');
@@ -507,7 +518,7 @@
     if (m === 'wrong') { startWrong(); return; }
     S.set.mode = m; save(); startGroup(m);
   });
-  $('#hQuote').addEventListener('click', () => { const k = +$('#hQuote').dataset.k; speak(WORDS[k].w); openWord(k); });
+  $('#hQuote').addEventListener('click', () => { const k = +$('#hQuote').dataset.k; speakLine(k); openWord(k); });
   $('#hTest').addEventListener('click', e => { if (e.target.closest('[data-act]')) return; startTest(); });
   $('#hTest').addEventListener('keydown', e => { if (e.key === 'Enter') startTest(); });
   $('#hStreak').addEventListener('click', () => toast(S.today.d === dayKey() && S.today.n ? `今天已答 ${S.today.n} 题` : '今天还没练'));
@@ -743,7 +754,7 @@
       stage.innerHTML = `<div class="flip" id="flip"><div class="flip-in">
           <div class="qc gl face">${spk}${tag}<div class="qw">${esc(w.w)}</div><div class="ipa">${esc(w.p)}</div></div>
           <div class="qc gl face back">${spk}${tag}<div class="qw sm">${esc(w.w)}</div><div class="qcn"><i>${esc(w.cp)}</i>${esc(w.cm)}</div>
-            <div class="qline"><em>${esc(w.en)}</em><span>${esc(w.cn)}</span></div></div>
+            <div class="qline">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}</span></div></div>
         </div></div>
         <div class="fbtns" id="fbtns">
           <button type="button" class="btn bad" data-r="0">不认识</button>
@@ -784,7 +795,7 @@
       <div class="fb-w"><b>${esc(w.w)}</b><span class="ipa">${esc(w.p)}</span><button type="button" class="spk sm gl" data-say2 aria-label="朗读">${icon('i-speaker-high')}</button></div>
       ${extra || ''}
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
-      <div class="fb-l"><em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
+      <div class="fb-l">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
       <button type="button" class="btn dark wide" id="nextBtn">${last ? '看成绩' : '下一题'}${icon('i-arrow-right')}</button>`;
     fb.hidden = false; requestAnimationFrame(() => fb.classList.add('on'));
     fb.querySelector('[data-say2]').addEventListener('click', () => speak(w.w));
@@ -1069,7 +1080,7 @@
     $('#vwBody').innerHTML = `
       <div class="rtop"><button type="button" class="cl" id="vwX" aria-label="关闭">${icon('i-x')}</button><div class="tkt">${esc(v.tier)} · ${t.cn}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="vwStage"></div>
-      <div class="vinfo"><div class="vw-w"><b>${esc(w.w)}</b><span>${esc(w.p)}</span><button type="button" class="spk sm" id="vwSay" aria-label="朗读">${icon('i-speaker-high')}</button></div>
+      <div class="vinfo"><div class="vw-w"><b>${esc(w.w)}</b><span>${esc(w.p)}</span><button type="button" class="spk sm" id="vwSay" aria-label="朗读">${icon('i-speaker-high')}</button><button type="button" class="lnp txt" data-line="${k}" aria-label="朗读例句">${icon('i-speaker-high')}例句</button></div>
         <div class="vw-m">${esc(short(w))}</div>
         ${owned.length > 1 ? `<div class="vchips">${chips}</div>` : ''}
         <div class="schips">${schips}</div></div>
@@ -1231,7 +1242,7 @@
       <div class="wsh-meta">No.${w.i} · 第 ${w.g} 组 · 考频 ${w.f} · ${stl}</div>
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
       ${w.note ? `<div class="fb-n">${esc(w.note)}</div>` : ''}
-      <div class="fb-l"><em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
+      <div class="fb-l">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
       ${owned.length ? `<div class="wsh-cards"><h4>已收集的卡面</h4><div class="wsh-row" id="wsCards"></div></div>` : '<div class="wsh-empty">还没有这张卡</div>'}
       <div class="sh-acts"><button type="button" class="btn soft" id="wsWrong">${icon(wr ? 'i-star-f' : 'i-star')}${wr ? '移出错词本' : '加入错词本'}</button></div></div>`, root => {
       root.querySelector('#wsSay').addEventListener('click', () => speak(w.w));
