@@ -127,6 +127,19 @@
     ctx.quadraticCurveTo(x, y, x + r, y); ctx.quadraticCurveTo(x, y, x, y + r);
     ctx.quadraticCurveTo(x, y, x - r, y); ctx.quadraticCurveTo(x, y, x, y - r); ctx.fill();
   }
+  // 缓慢漂移的彩色光斑（镜头漏光）
+  function leaks(t, alpha) {
+    if (alpha <= 0) return;
+    var L = [[.2, .25, 'rgba(249,150,200,', 300, .7, 0], [.85, .55, 'rgba(140,180,255,', 340, .55, 2], [.4, .85, 'rgba(200,150,255,', 280, .9, 4]];
+    ctx.globalCompositeOperation = 'screen';
+    L.forEach(function (l) {
+      var x = 540 * (l[0] + .12 * Math.sin(t * .35 + l[5])), y = 960 * (l[1] + .08 * Math.cos(t * .27 + l[5])), r = l[3] * (1 + .15 * Math.sin(t * .5 + l[5]));
+      var g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, l[2] + (.22 * alpha * l[4]) + ')'); g.addColorStop(1, l[2] + '0)');
+      ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
   function starfield(t, alpha) {
     if (alpha <= 0) return;
     ctx.fillStyle = '#fff';
@@ -240,6 +253,7 @@
     $('#vig').style.opacity = lerp(1, .3, day);
 
     var night = 1 - day;
+    leaks(t, night * seg(t, 0, 1.2));
     starfield(t, night * (t < 3 ? seg(t, 0, .6) : 1));
     motes(t, day);
 
@@ -402,7 +416,9 @@
       var dd = k - p, ad = Math.abs(dd);
       var op = ad < 1 ? 1 - ad * .35 : Math.max(0, .65 - (ad - 1) * .55);
       var x = dd * 205 * (1 - ex), z = -ad * 240 - ex * 300, ry = cl(-dd * 42, -65, 65) * (1 - ex);
-      d.c.wrap.style.transform = 'translate3d(' + x + 'px,' + (-ex * 40) + 'px,' + z + 'px) rotateY(' + ry + 'deg)';
+      d.c.wrap.style.transform = 'perspective(1100px) translate3d(' + x + 'px,' + (-ex * 40) + 'px,' + z + 'px) rotateY(' + ry + 'deg)';
+      // 景深：离中心越远越虚
+      d.c.wrap.style.filter = ad > .15 ? 'blur(' + Math.min(3.2, (ad - .15) * 2.4).toFixed(2) + 'px) brightness(' + (1 - Math.min(.3, ad * .18)).toFixed(3) + ')' : 'none';
       d.c.wrap.style.opacity = op * (1 - ex);
       d.c.wrap.style.zIndex = String(100 - Math.round(ad * 10));
       d.c.wrap.style.display = op * (1 - ex) > .01 ? 'block' : 'none';
@@ -421,7 +437,7 @@
     big.style.letterSpacing = lerp(.3, .04, be) + 'em';
     var ca = 1 - E.out3(seg(age, 0, .3));
     big.style.textShadow = ca > .01 ? (-10 * ca) + 'px 0 rgba(255,120,200,' + (.7 * ca) + '),' + (10 * ca) + 'px 0 rgba(120,220,255,' + (.7 * ca) + ')' : 'none';
-    setText($('#dCn'), 'dc', cd.cn); setText($('#dRate'), 'dr', cd.rate);
+    setText($('#dCn'), 'dc', cd.cn); setText($('#dRate'), 'dr', cd.tier === 'SECRET' ? '? ? ?' : C.BY_ID[cd.v].en);
     ['#dCn', '#dRate'].forEach(function (s, j) {
       var e = E.out3(seg(age, .04 + j * .05, .26 + j * .05)), el = $(s);
       el.style.opacity = e * (1 - ex); el.style.transform = 'translateY(' + (1 - e) * 12 + 'px)';
@@ -478,7 +494,7 @@
     // 等级文字
     var eT = $('#eT');
     if (ti >= 0) {
-      setText(eT.firstChild, 'et', ST[ti].cn); setText(eT.lastChild, 'er', ST[ti].rate + '%');
+      setText(eT.firstChild, 'et', ST[ti].cn); setText(eT.lastChild, 'er', ST[ti].v.map(function (x) { return x.cn; }).join(' · '));
       var e = E.out3(seg(tAge, 0, .2));
       eT.style.opacity = e * (1 - focus); eT.style.transform = 'scale(' + lerp(1.2, 1, E.outExpo(seg(tAge, 0, .35))) + ')';
       eT.style.filter = e < 1 ? 'blur(' + (1 - e) * 8 + 'px)' : '';
@@ -492,7 +508,7 @@
     var sh = shake(t, 17.5, 5, .3);
     fC.wrap.style.opacity = ent;
     fC.wrap.style.zIndex = '10';
-    fC.wrap.style.transform = 'translate3d(' + sh[0] + 'px,' + ((1 - ent) * 70 + sh[1]) + 'px,0) scale(' + (lerp(.9, 1, ent) * (t >= 17.5 ? 1 - .03 * Math.sin(Math.PI * seg(t, 17.5, 17.7)) : 1)) + ')';
+    fC.wrap.style.transform = 'perspective(1200px) translate3d(' + sh[0] + 'px,' + ((1 - ent) * 70 + sh[1]) + 'px,0) scale(' + (lerp(.9, 1, ent) * (t >= 17.5 ? 1 - .03 * Math.sin(Math.PI * seg(t, 17.5, 17.7)) : 1)) + ')';
     var a = t - 17.6;
     pose(fC.el, t < 17.6 ? 50 : 50 + 24 * Math.sin(a * 1.9), t < 17.6 ? 48 : 46 + 18 * Math.sin(a * 2.7 + .4), t < 17.4 ? .5 : 1, .5);
     if (fC.seal) fC.seal.style.opacity = t >= 17.5 ? 1 : 0;
@@ -503,7 +519,7 @@
       c.wrap.style.zIndex = '5';
       c.wrap.style.display = fan > 0 ? 'block' : 'none';
       c.wrap.style.opacity = cl(fan) * .9;
-      c.wrap.style.transform = 'translate3d(' + (sgn * 150 * fan) + 'px,' + (30 * fan) + 'px,' + (-140 * fan) + 'px) rotateZ(' + (sgn * 11 * fan) + 'deg) rotateY(' + (-sgn * 14 * fan) + 'deg)';
+      c.wrap.style.transform = 'perspective(1200px) translate3d(' + (sgn * 150 * fan) + 'px,' + (30 * fan) + 'px,' + (-140 * fan) + 'px) rotateZ(' + (sgn * 11 * fan) + 'deg) rotateY(' + (-sgn * 14 * fan) + 'deg)';
       pose(c.el, 50 - sgn * 18 + 10 * Math.sin(t * 2), 40 + 10 * Math.cos(t * 2.3), .8, .3);
     });
     [['#fTitle', 17.75, .5], ['#fSub', 18.05, .45], ['#fTease', 18.3, .45], ['#fFoot', 18.5, .45]].forEach(function (x) {

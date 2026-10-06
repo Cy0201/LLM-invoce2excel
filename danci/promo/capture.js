@@ -1,9 +1,10 @@
-/* 逐帧截图：node promo/capture.js <输出目录> [fps] [起始秒] [结束秒] [并行数]
+/* 逐帧截图：node promo/capture.js <输出目录> [fps] [起始秒] [结束秒] [并行数] [像素倍率]
+ * 成片用 60fps × 3 倍渲染，再用 ffmpeg 两帧混合（动态模糊）+ 缩到 1080×1920（抗锯齿、减少闪烁）
  * 本地起一个静态服务：dist/ 为根，promo/ 和字体包挂在旁边 */
 const path = require('path'), fs = require('fs'), http = require('http');
 const { chromium } = require(process.env.PW || '/opt/node-tools/node_modules/playwright');
 const ROOT = path.join(__dirname, '..');
-const OUT = process.argv[2], FPS = +(process.argv[3] || 30), T0 = +(process.argv[4] || 0), T1 = +(process.argv[5] || 20), PAR = +(process.argv[6] || 3);
+const OUT = process.argv[2], FPS = +(process.argv[3] || 30), T0 = +(process.argv[4] || 0), T1 = +(process.argv[5] || 20), PAR = +(process.argv[6] || 3), DSF = +(process.argv[7] || 2);
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webp': 'image/webp', '.woff2': 'font/woff2', '.woff': 'font/woff' };
 function resolve(u) {
   if (u === '/' || u === '/index.html') return path.join(__dirname, 'index.html');
@@ -27,7 +28,7 @@ function resolve(u) {
   const t0 = Date.now();
   await Promise.all(Array.from({ length: PAR }, async (_, w) => {
     const mine = frames.slice(w * chunk, (w + 1) * chunk); if (!mine.length) return;
-    const ctx = await browser.newContext({ viewport: { width: 540, height: 960 }, deviceScaleFactor: 2 });
+    const ctx = await browser.newContext({ viewport: { width: 540, height: 960 }, deviceScaleFactor: DSF });
     const p = await ctx.newPage();
     p.on('pageerror', e => console.log('pageerror', e.message));
     p.on('requestfailed', r => console.log('requestfailed', r.url()));
