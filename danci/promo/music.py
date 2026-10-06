@@ -192,16 +192,6 @@ def fx(name, t, g, pan=0.0, rev=0.0):
     put(dry, getattr(FX, 's_' + name)(), t, g, pan, rev)
 
 
-def voice(word_no):
-    """发音：直接用 app 里的录音"""
-    js = open(os.path.join(HERE, '..', 'src', 'js', 'audio-clips.js'), encoding='utf-8').read()
-    clips = json.loads(js[js.index('{'):js.rindex('}') + 1])
-    import base64
-    mp3 = base64.b64decode(clips[str(word_no)])
-    raw = subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', 'pipe:0', '-f', 's16le', '-ac', '1', '-ar', str(SR), 'pipe:1'],
-                         input=mp3, capture_output=True, check=True).stdout
-    return np.frombuffer(raw, np.int16).astype(np.float64) / 32768
-
 
 # ---------------- 和声与主旋律 ----------------
 F9 = [53, 57, 60, 64, 67]          # Fmaj9
@@ -229,8 +219,7 @@ motif(0.25, .085, upto=7)                                        # 八音盒主�
 A_T = [0.45, 0.72, 0.95, 1.14, 1.3, 1.44, 1.56, 1.67, 1.78, 1.89, 2.02]
 for j, t in enumerate(A_T):                                      # 词流闪过：很轻的星光
     musicbox(96 + [0, 2, 4, 7, 9][j % 5], t, .018, (-1) ** j * .5, .7)
-chord_piano([53, 60, 64, 69], 2.2, .55, 2.2)                     # still 落定
-put(dry, voice(3), 2.24, .6, 0, .25)
+chord_piano([53, 60, 64, 69], 2.2, .6, 2.4)                      # still 落定
 put(dry, FX.noise_sweep(.7, 600, 9000, 'arch', 1.0, .45), 2.62, .1, 0, .3)   # 镭射色带扫过
 
 # ===== B 3–7：答题，轻快 =====
@@ -248,8 +237,6 @@ for t0, ch, root in ((3.0, DM9, 38), (5.0, BB9, 34)):
         chord_piano([m + 12 for m in ch[1:4]], t0 + b, v, .9)
     for b in range(4):
         bass(root, t0 + b * .5, .45, .16)
-put(dry, voice(14), 4.52, .5, -.1, .2)                           # wonder
-put(dry, voice(4), 5.02, .5, .1, .2)                             # offer
 fx('ok', 3.9, .4)
 B_T = [3.0, 4.5, 5.0, 5.5, 5.75, 6.0, 6.25, 6.375, 6.5, 6.625]
 SCALE = [77, 79, 81, 84, 86, 88, 89, 91, 93, 96]
@@ -314,9 +301,12 @@ for i in range(9):
 for j in range(10):                                              # 十枚火漆弹出
     FXpop = FX.marimba(hz([60, 62, 65, 67, 69, 72, 74, 77, 79, 81][j]), .3, 1.0)
     put(dry, FXpop, 14.45 + j * .05, .1, (-1) ** j * .5, .3)
-for k, m in enumerate([84, 88, 91, 96]):                         # 素封 珍封 金封 秘封
+# 四档都保留八音盒；隐藏、超级隐藏底下再垫低音 + 心跳 + 反向渐强，暗一点
+for k, m in enumerate([84, 88, 91, 96]):
     musicbox(m, 15.0 + k * .5, .1, 0, .6)
     piano(m - 24, 15.0 + k * .5, .35, 1.0)
+rev_swell(16.0, .45, .1); piano(37, 16.0, .5, 1.6)
+heartbeat(16.5, .35); piano(36, 16.5, .55, 1.4)
 t = 14.5
 while t < 16.75 - 1e-6:
     bass(43 if t < 16.5 else 36, t, .22, .16)

@@ -99,3 +99,13 @@ html,body{margin:0;width:540px;height:960px;overflow:hidden;background:#15121C}
 .veil .vq{position:absolute;left:0;right:0;top:24%;text-align:center;font:italic 400 1.9em/1 var(--se);background:linear-gradient(180deg,#FFF3D6 10%,#E9C27E 55%,#FFF0CF 90%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 .12em rgba(255,226,170,.65))}
 .veil .vb{position:absolute;left:0;right:0;top:66%;text-align:center;font:600 .17em/1 var(--sc);letter-spacing:.6em;padding-left:.6em;color:rgba(242,215,162,.85)}
 #fTease{position:absolute;left:0;right:0;top:752px;text-align:center;font:600 16px/1 var(--sc);letter-spacing:.4em;padding-left:.4em;color:#F2D7A2;text-shadow:0 0 14px rgba(242,215,162,.5)}
+
+/* 隐藏火漆：只给剪影和问号 */
+.sil{position:absolute;left:195px;top:395px;width:150px;height:150px;opacity:0}
+.sil i{position:absolute;left:0;top:0;width:100%;height:100%;background:center/contain no-repeat;filter:brightness(0) drop-shadow(0 0 2px rgba(242,215,162,.9)) drop-shadow(0 0 16px rgba(242,215,162,.55))}
+.sil b{position:absolute;left:0;right:0;top:22%;text-align:center;font:italic 400 72px/1 var(--se);background:linear-gradient(180deg,#FFF3D6 10%,#E9C27E 60%,#FFF0CF 95%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(242,215,162,.7))}
+.sil.s2 i{filter:brightness(0) drop-shadow(0 0 2px rgba(200,160,255,.95)) drop-shadow(0 0 22px rgba(150,90,255,.7))}
+.sil.s2 b{background:linear-gradient(180deg,#F3E8FF 10%,#B996FF 60%,#F6EEFF 95%);-webkit-background-clip:text;background-clip:text}
+
+/* 面纱下的隐藏款：光缝只露出镭射底色，不露任何文字 */
+.cf-ov.veiled .cf-w,.cf-ov.veiled .cf-name,.cf-ov.veiled .cf-no,.cf-ov.veiled .cf-line,.cf-ov.veiled .cf-foot,.cf-ov.veiled .cf-tier,.cf-ov.veiled .cf-art{visibility:hidden}

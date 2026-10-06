@@ -32,12 +32,13 @@
     var m = CK.make(vid, W(word), { seal: seal });
     m.el.classList.remove('lit');
     box.appendChild(m.el); wrap.appendChild(box); parent.appendChild(wrap);
-    var sl = m.el.querySelector('.cf-seal'), vl = null;
+    var sl = m.el.querySelector('.cf-seal'), vl = null, face0;
     // 隐藏款不完整展示：盖一层夜色面纱，只有一道光缝扫过时露出一窄条真卡面
     if (veil) {
       vl = document.createElement('div'); vl.className = 'veil';
       vl.innerHTML = '<b class="vt">SECRET</b><i class="vq">?</i><span class="vb">隐藏款</span>';
       var ov = m.el.querySelector('.cf-ov'); ov.insertBefore(vl, sl || null);
+      ov.classList.add('veiled'); face0 = m.el.querySelector('.cf-face'); if (face0) face0.style.visibility = 'hidden';
     }
     return { wrap: wrap, el: m.el, seal: sl, veil: vl };
   }
@@ -107,9 +108,11 @@
   var D_T0 = 10.5;
 
   // E：十枚火漆
-  var SE = ['star', 'bow', 'heart', 'diamond', 'pearl', 'sunset', 'crown', 'moon', 'aurora', 'midnight'];
+  // 火漆环：星座漆（可见的 11 枚）+ 午夜星月（最后飞到卡上盖章）
+  var SE = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'aquarius', 'capricorn', 'capricorn_gold', 'midnight'];
   var seals = SE.map(function (id) { return { id: id, rank: C.SEAL[id].rank, el: sealEl(id, $('#eSeals')) }; });
-  var ST = C.SEAL_TIERS, TI_MAP = [0, 1, 2, 4];  // 片中四档高亮：素漆、雅漆、金漆、秘漆
+  var ST = C.SEAL_TIERS, TI_MAP = [3, 4, 5, 6];  // 片中四档：星座漆、秘漆、隐藏、超级隐藏（后两档只给剪影）
+  var SIL = [$('#eSil1'), $('#eSil2')];
   var bigSeal = sealEl('midnight', $('#bigSeal'));
 
   // F：收尾三张卡
@@ -469,11 +472,11 @@
     var focus = E.io3(seg(t, 16.75, 17.12));
     var rot = (t - 14.4) * .9 + .6, cx = 270, cy = 590, rx = 205 + focus * 120, ry = 74 + focus * 40;
     seals.forEach(function (s, j) {
-      var a = rot + j / 10 * 6.283, depth = (Math.sin(a) + 1) / 2;
+      var a = rot + j / SE.length * 6.283, depth = (Math.sin(a) + 1) / 2;
       var x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a), size = 74 + 44 * depth;
-      var st = 14.45 + j * .05, pop = E.outBack(seg(t, st, st + .32));
+      var st = 14.45 + j * .042, pop = E.outBack(seg(t, st, st + .32));
       var hot = ti >= 0 && s.rank === TI_MAP[ti], k = ti < 0 ? 1 : hot ? 1.32 + .08 * Math.sin(Math.PI * seg(tAge, 0, .2)) : .9;
-      var op = ti < 0 ? 1 : hot ? 1 : .38;
+      var op = ti < 0 ? 1 : hot ? 1 : ti >= 2 ? .25 : .38;
       if (s.id === 'midnight') { s.el.style.display = 'none'; return; }
       op *= 1 - focus;
       s.el.style.display = op > .01 && pop > 0 ? 'block' : 'none';
@@ -488,11 +491,11 @@
       }
     });
     // 午夜星月：环上 → 画面中央放大 → 盖到卡面上
-    var mj = 9, ma = rot + mj / 10 * 6.283, md = (Math.sin(ma) + 1) / 2;
+    var mj = SE.length - 1, ma = rot + mj / SE.length * 6.283, md = (Math.sin(ma) + 1) / 2;
     var m0x = cx + (205) * Math.cos(ma), m0y = cy + 74 * Math.sin(ma), m0s = 74 + 44 * md;
-    var mpop = E.outBack(seg(t, 14.45 + mj * .05, 14.45 + mj * .05 + .32));
-    var mhot = ti === 3 ? 1.32 + .08 * Math.sin(Math.PI * seg(tAge, 0, .2)) : 1;
-    var mop = ti < 0 || ti === 3 ? 1 : .38;
+    var mpop = E.outBack(seg(t, 14.45 + mj * .042, 14.45 + mj * .042 + .32));
+    var mhot = ti === 1 ? 1.32 + .08 * Math.sin(Math.PI * seg(tAge, 0, .2)) : 1;
+    var mop = ti < 0 || ti === 1 ? 1 : ti >= 2 ? .25 : .38;
     var X = lerp(m0x, 270, focus), Y = lerp(m0y, 470, focus), S = lerp(m0s * mhot, 236, focus);
     var st2 = E.in3(seg(t, 17.18, 17.5));
     if (st2 > 0) { X = lerp(270, STAMP.x, st2); Y = lerp(470, STAMP.y, st2); S = lerp(236, STAMP.s, st2); }
@@ -504,12 +507,22 @@
     // 等级文字
     var eT = $('#eT');
     if (ti >= 0) {
-      setText(eT.firstChild, 'et', ST[TI_MAP[ti]].cn); setText(eT.lastChild, 'er', ST[TI_MAP[ti]].v.map(function (x) { return x.cn; }).join(' · '));
+      setText(eT.firstChild, 'et', ST[TI_MAP[ti]].cn);
+      setText(eT.lastChild, 'er', ti === 0 ? '白羊 · 金牛 · 双子 · 巨蟹 · 狮子 · 处女 …' : ti >= 2 ? '？ ？ ？' : ST[TI_MAP[ti]].v.map(function (x) { return x.cn; }).join(' · '));
       var e = E.out3(seg(tAge, 0, .2));
       eT.style.opacity = e * (1 - focus); eT.style.transform = 'scale(' + lerp(1.2, 1, E.outExpo(seg(tAge, 0, .35))) + ')';
       eT.style.filter = e < 1 ? 'blur(' + (1 - e) * 8 + 'px)' : '';
     } else eT.style.opacity = 0;
-    burst(t, 15 + 3 * .5, 270, 590, 40, 21, 420, .9);
+    [2, 3].forEach(function (k, i) {
+      var el = SIL[i], age = t - (15 + k * .5), inn = E.outBack(seg(age, 0, .3)), out = seg(t, 15 + (k + 1) * .5 - .08, 15 + (k + 1) * .5 + .1);
+      if (k === 3) out = seg(t, 16.75, 16.95);
+      var o = cl(inn) * (1 - out);
+      if (k === 3 && age > 0) o *= .78 + .22 * Math.sin(age * 47) * Math.sin(age * 13);   // 超级隐藏：不稳定的闪烁
+      el.style.opacity = o.toFixed(3);
+      el.style.transform = 'scale(' + (lerp(1.35, 1, inn) * (1 + out * .25)) + ') rotate(' + (i ? -6 : 5) * (1 - inn) + 'deg)';
+      el.style.filter = 'blur(' + ((out + (1 - cl(inn))) * 6).toFixed(2) + 'px)';
+    });
+    burst(t, 16.5, 270, 470, 46, 21, 420, .9);
   }
 
   function sceneF(t) {
