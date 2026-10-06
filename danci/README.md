@@ -69,7 +69,7 @@ python3 tools/gift_codes.py --year --force                                     #
 
 ```bash
 python3 tools/build.py                                   # 先生成 dist/
-node promo/capture.js /tmp/frames 30 0 20 4              # 逐帧截图
+node promo/capture.js /tmp/frames 60 0 20 4 3            # 逐帧截图（60fps、3 倍像素）
 python3 promo/music.py /tmp/music.wav                    # 配乐
 ffmpeg -framerate 30 -i /tmp/frames/%04d.jpg -i /tmp/music.wav -c:v libx264 -crf 17 -pix_fmt yuv420p \
   -c:a aac -b:a 192k -af loudnorm=I=-14:TP=-1.5 -movflags +faststart -shortest promo/不止单词-宣传片.mp4
