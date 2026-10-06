@@ -173,7 +173,7 @@ def main():
         verify(samples + [('ZZZZ-ZZZZ-ZZZZ', 'sign')])
         last = mon + datetime.timedelta(weeks=a.weeks - 1, days=6)
         p = write_codes('全年周码_%s至%s' % (mon.strftime('%Y%m%d'), last.strftime('%Y%m%d')), rows,
-                        '单词手账 兑换码 · 每周一批（周一生效，下周三截止）· 每个码 %d 张抽卡券' % a.tickets)
+                        '不止单词 兑换码 · 每周一批（周一生效，下周三截止）· 每个码 %d 张抽卡券' % a.tickets)
         print('%d 周 × %d 个码，已写入 %s.csv / .txt' % (a.weeks, a.count, os.path.relpath(p, ROOT)))
     elif a.extra:
         assert db, '先生成指纹库（--year）'
@@ -187,7 +187,7 @@ def main():
         log_batch(key, today, en, a.tickets, a.count, a.note)
         verify([(codes[0], key)])
         p = write_codes('临时码_%s_%d张_至%s' % (key, a.tickets, en.strftime('%m%d')), [[key, today.isoformat(), en.isoformat(), a.tickets, fmt(c)] for c in codes],
-                        '单词手账 兑换码 · 批次 %s · %s' % (key, a.note))
+                        '不止单词 兑换码 · 批次 %s · %s' % (key, a.note))
         print('批次 %s：%d 个码，已写入 %s.csv / .txt（记得重新打包上传）' % (key, a.count, os.path.relpath(p, ROOT)))
     else:
         assert db, '先生成指纹库（--year）'

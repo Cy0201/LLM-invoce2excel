@@ -1,4 +1,4 @@
-/* 单词手账 v3 · 视觉沿用 mock5（珍珠紫粉 + 镭射卡）
+/* 不止单词 v3 · 视觉沿用 mock5（珍珠紫粉 + 镭射卡）
  * 兼容基线 Chrome 61：不用 flex gap / inset / aspect-ratio / clamp()；backdrop-filter 只作增强。 */
 :root{
   --ink:#1F1C24;--ink2:#5F5868;--ink3:#9A93A3;--rose:#E0708F;--good:#3FAE8A;--bad:#E0708F;

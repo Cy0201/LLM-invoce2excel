@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""单词手账 · 小红书小工具构建脚本
+"""不止单词 · 小红书小工具构建脚本
 
 用法（在 danci/ 目录下）：
-  python3 tools/build.py                          # 构建 dist/ 并打包 单词手账.zip
+  python3 tools/build.py                          # 构建 dist/ 并打包 不止单词.zip
   python3 tools/build.py --lineart 线稿拼图.png    # 先把 UR 以上 6 张线稿切好放进卡面，再构建
   python3 tools/build.py --lineart 线稿.png --grid 3x2 --order ur1,ur2,lr1,lr2,x1,x2
 
@@ -22,7 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'src')
 DIST = os.path.join(ROOT, 'dist')
 TOOLS = os.path.join(ROOT, 'tools')
-ZIP_NAME = '单词手账.zip'
+ZIP_NAME = '不止单词.zip'
 
 # 线稿拼图默认 3 列 × 2 行，从左到右、从上到下依次对应以下 6 款卡面
 DEFAULT_ORDER = ['ur1', 'ur2', 'lr1', 'lr2', 'x1', 'x2']
@@ -376,7 +376,7 @@ def checks(zip_path):
 
 
 def main():
-    ap = argparse.ArgumentParser(description='构建单词手账小工具 zip')
+    ap = argparse.ArgumentParser(description='构建不止单词小工具 zip')
     ap.add_argument('--lineart', help='6 张线稿拼成的一张图（默认 3 列 × 2 行）')
     ap.add_argument('--grid', default='3x2', help='拼图的列 x 行，默认 3x2')
     ap.add_argument('--order', default=','.join(DEFAULT_ORDER), help='格子对应的卡面，默认 ' + ','.join(DEFAULT_ORDER))

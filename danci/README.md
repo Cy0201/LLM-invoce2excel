@@ -1,10 +1,10 @@
-# 单词手账 · 小红书小工具
+# 不止单词 · 小红书小工具
 
 背单词 + 抽卡收集。高考核心 688 词，35 组，每组 20 词。
 
 ## 交付物
 
-`单词手账.zip`：上传到创服平台即可（`index.html` 在 zip 根目录）。
+`不止单词.zip`：上传到创服平台即可（`index.html` 在 zip 根目录）。
 
 ## 功能
 
@@ -36,7 +36,7 @@
 
 ```bash
 cd tools && npm install && cd ..   # 字体源、语法检查依赖（只需一次）
-python3 tools/build.py             # 生成 dist/ 和 单词手账.zip，并自动审计
+python3 tools/build.py             # 生成 dist/ 和 不止单词.zip，并自动审计
 node tools/e2e.js                  # 可选：模拟容器把主要流程点一遍，截图在 tools/.shots/
 ```
 

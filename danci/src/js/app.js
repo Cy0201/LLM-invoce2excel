@@ -1,4 +1,4 @@
-/* 单词手账 v3 · 背单词 + 抽卡收集
+/* 不止单词 v3 · 背单词 + 抽卡收集
  * 小红书小工具（离线 H5）：ES2017，无网络请求，无内联脚本。 */
 (function () {
   'use strict';
@@ -1504,7 +1504,7 @@
     ctx.textAlign = 'center'; ctx.fillStyle = sub; ctx.font = `400 26px ${SA}`;
     const sl = seal && SEAL[seal];
     ctx.fillText(sl ? `${t.cn} · ${sl.tcn}「${sl.cn}」` : t.cn, W / 2, Math.min(H - 150, floor + 140));
-    ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('单词手账 · 高考核心 688 词', W / 2, H - 70);
+    ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('不止单词 · 高考核心 688 词', W / 2, H - 70);
     return cv;
   }
   async function resultPoster(R, theme, safe) {
@@ -1569,7 +1569,7 @@
       ctx.fillStyle = sub; ctx.font = `400 30px ${SC}`; ctx.textAlign = 'right'; ctx.fillText(short(w), W - 90, yy - 6); ctx.textAlign = 'left';
     });
     ctx.fillStyle = dark ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.55)'; rr(ctx, 60, H - 200, W - 120, 130, 30); ctx.fill();
-    ctx.fillStyle = fg; ctx.font = `600 36px ${SC}`; ctx.fillText('单词手账', 110, H - 128);
+    ctx.fillStyle = fg; ctx.font = `600 36px ${SC}`; ctx.fillText('不止单词', 110, H - 128);
     ctx.fillStyle = sub; ctx.font = `italic 400 28px ${SE}`; ctx.fillText('688 high-frequency words', 110, H - 90);
     let bx = W - 110; for (let i = 0; i < 26; i++) { const bw = [3, 3, 6, 9][(i * 7 + R.right) % 4]; bx -= bw + 6; ctx.fillStyle = fg; ctx.fillRect(bx, H - 168, bw, 66); }
     return cv;
@@ -1582,8 +1582,8 @@
   async function shareCard(k, vid, seal) {
     const v = C.BY_ID[vid];
     openShare('晒这张卡', () => makeImage(safe => cardPoster(k, vid, safe, seal)), {
-      title: v.rank >= 3 ? `抽到了${TIER[v.tier].cn}「${v.cn}」` : '单词手账的新卡片',
-      content: `背单词抽到了 ${v.tier} ${TIER[v.tier].cn}「${v.cn}」✨ 单词：${WORDS[k].w}\n#单词手账 #高考英语 #背单词`
+      title: v.rank >= 3 ? `抽到了${TIER[v.tier].cn}「${v.cn}」` : '不止单词的新卡片',
+      content: `背单词抽到了 ${v.tier} ${TIER[v.tier].cn}「${v.cn}」✨ 单词：${WORDS[k].w}\n#不止单词 #高考英语 #背单词`
     });
   }
   function shareResult(R) {
@@ -1591,7 +1591,7 @@
     const run = () => makeImage(safe => resultPoster(R, theme, safe));
     openShare('成绩卡', run, {
       title: R.kind === 'test' ? `全部测试 ${R.right}/${R.total}` : `${R.label}打卡`,
-      content: `今天在单词手账答对 ${R.right}/${R.total}，正确率 ${R.pct}%，连续打卡 ${streak()} 天。\n#单词手账 #高考英语 #背单词打卡`
+      content: `今天在不止单词答对 ${R.right}/${R.total}，正确率 ${R.pct}%，连续打卡 ${streak()} 天。\n#不止单词 #高考英语 #背单词打卡`
     }, [['sky', '晴'], ['dusk', '暮'], ['night', '夜']], t => { theme = t; });
   }
   let shareData = null;
@@ -1656,7 +1656,7 @@
     if (!S.welcome) {
       S.welcome = true;
       addTickets(10, 1);
-      setTimeout(() => modal('单词手账', '送你 10 张抽卡券。', [{ label: '先去背词' }, { label: '去抽卡', cls: 'holo', fn: () => show('draw') }]), 400);
+      setTimeout(() => modal('不止单词', '送你 10 张抽卡券。', [{ label: '先去背词' }, { label: '去抽卡', cls: 'holo', fn: () => show('draw') }]), 400);
     }
     save();
     $('#boot').hidden = true; $('#app').hidden = false;
