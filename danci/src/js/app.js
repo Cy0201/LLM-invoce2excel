@@ -1285,9 +1285,14 @@
     ctx.textAlign = 'left'; ctx.globalAlpha = 1; ctx.shadowColor = 'transparent';
     rr(ctx, x, y, W, H, W * .045); ctx.clip();
     ctx.fillStyle = '#eee'; ctx.fillRect(x, y, W, H);
-    cover(ctx, imgs.art, x, y, W, H);
-    if (imgs.line) { ctx.globalAlpha = .5; cover(ctx, imgs.line, x, y, W, H, land ? 1 : .5, land ? .5 : 0); ctx.globalAlpha = 1; }
-    if (v.rank >= 2) {
+    if (imgs.face) {
+      // 预渲染的真实镭射卡面（tools/faces.js）：闪粉、条纹、高光和 app 里一模一样
+      ctx.drawImage(imgs.face, x, y, W, H);
+    } else {
+      cover(ctx, imgs.art, x, y, W, H);
+      if (imgs.line) { ctx.globalAlpha = .5; cover(ctx, imgs.line, x, y, W, H, land ? 1 : .5, land ? .5 : 0); ctx.globalAlpha = 1; }
+    }
+    if (!imgs.face && v.rank >= 2) {
       const g = ctx.createLinearGradient(x, y, x + W, y + H);
       ['#ff9ad5', '#fff3a8', '#9effd8', '#9ad7ff', '#d5a8ff', '#ff9ad5'].forEach((c, i) => g.addColorStop(i / 5, c));
       ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = v.rank >= 4 ? .55 : .4; ctx.fillStyle = g; ctx.fillRect(x, y, W, H);
@@ -1408,7 +1413,8 @@
     // 镜面高光 + 一道斜向的镭射反光
     const g0 = sp(-w * .22, -h * .3, 0);
     const gl = ctx.createRadialGradient(g0[0], g0[1], 0, g0[0], g0[1], w * .95);
-    gl.addColorStop(0, 'rgba(255,255,255,.42)'); gl.addColorStop(.45, 'rgba(255,255,255,.08)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+    const ga = o.soft ? .5 : 1;   // 卡面自带镭射高光时，投影层的高光减半，避免发白
+    gl.addColorStop(0, 'rgba(255,255,255,' + .42 * ga + ')'); gl.addColorStop(.45, 'rgba(255,255,255,' + .08 * ga + ')'); gl.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = gl; ctx.fillRect(L - 10, Math.min.apply(null, ys) - 10, R - L + 20, bot - Math.min.apply(null, ys) + 20);
     const s0 = sp(-w * .5, -h * .1, 0), s1 = sp(w * .5, h * .25, 0);
     const sg = ctx.createLinearGradient(s0[0], s0[1], s1[0], s1[1]);
@@ -1428,6 +1434,7 @@
     const v = C.BY_ID[vid], w = WORDS[k], t = TIER[v.tier];
     await fontsReady();
     const imgs = safe ? {} : {
+      face: await loadImg('img/face/' + vid + '.webp'),
       art: await loadImg('img/art/' + vid + '.webp'), seal: seal ? await loadImg('img/seal/' + seal + '.webp') : null,
       line: (window.LINEART || {})[vid] ? await loadImg(window.LINEART[vid]) : null
     };
@@ -1471,7 +1478,7 @@
       ry: (v.land ? -14 : -20) * Math.PI / 180, rx: 8 * Math.PI / 180, D: 2200, depth: cw * .03,
       edge: gold ? ['#FFF3D6', '#E9C27E', '#B8873E', '#7A5626'] : v.lt ? ['#E4DBFF', '#9C8BD6', '#5B4C93', '#3A2E66'] : ['#FFFFFF', '#F1E8F2', '#D9CCE0', '#B7A8C2'],
       rim: gold ? 'rgba(255,236,200,.75)' : 'rgba(255,255,255,.7)',
-      shadow: dark ? 'rgba(0,0,0,.7)' : 'rgba(90,60,120,.38)', glow: dark ? 'rgba(150,130,255,.35)' : null
+      shadow: dark ? 'rgba(0,0,0,.7)' : 'rgba(90,60,120,.38)', glow: dark ? 'rgba(150,130,255,.35)' : null, soft: !!imgs.face
     });
     // 倒影：翻转、渐隐
     const floor = box.bot + 4;
@@ -1529,7 +1536,7 @@
       const fan = (uniq.length >= 3 ? uniq.slice(0, 3) : ['sr1', 'ssr1', 'lr1']).reverse();
       const cw = 170, chh = cw * 386 / 250;
       for (let i = 0; i < fan.length; i++) {
-        const id = fan[i], fv = C.BY_ID[id], art = await loadImg('img/art/' + id + '.webp');
+        const id = fan[i], fv = C.BY_ID[id], art = (await loadImg('img/face/' + id + '.webp')) || (await loadImg('img/art/' + id + '.webp'));
         const f = document.createElement('canvas'); f.width = Math.round(cw * 2); f.height = Math.round(chh * 2);
         const fc = f.getContext('2d'); fc.scale(2, 2);
         rr(fc, 0, 0, cw, chh, cw * .05); fc.clip(); cover(fc, art, 0, 0, cw, chh);

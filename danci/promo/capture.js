@@ -10,7 +10,7 @@ function resolve(u) {
   if (u === '/' || u === '/index.html') return path.join(__dirname, 'index.html');
   if (u === '/promo.js' || u === '/promo.css') return path.join(__dirname, u);
   if (u.startsWith('/fs/')) return path.join(ROOT, 'tools/node_modules/@fontsource/noto-serif-sc', u.slice(4));
-  return path.join(ROOT, 'dist', u);
+  return path.join(process.env.PROMO_DIST || path.join(ROOT, 'dist'), u);
 }
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });

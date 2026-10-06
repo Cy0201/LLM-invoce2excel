@@ -11,7 +11,9 @@ html,body{margin:0;width:540px;height:960px;overflow:hidden;background:#15121C}
 .ctr{position:absolute;left:0;right:0;text-align:center}
 
 /* A */
-#aKick{position:absolute;left:0;right:0;top:322px;text-align:center;font:300 15px/1 var(--sc);letter-spacing:.5em;color:rgba(255,255,255,.78)}
+#aKick{position:absolute;left:0;right:0;top:250px;text-align:center}
+#aKick span{display:block;font:300 19px/1 var(--sc);letter-spacing:.5em;padding-left:.5em;color:rgba(255,255,255,.8)}
+#aKick b{display:block;margin-top:18px;font:600 30px/1 var(--sc);letter-spacing:.32em;padding-left:.32em;background:linear-gradient(180deg,#FFF3D6 10%,#E9C27E 60%,#FFF0CF 95%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 12px rgba(242,215,162,.45))}
 #aLine{position:absolute;left:50%;top:356px;height:1px;width:360px;margin-left:-180px;background:linear-gradient(90deg,rgba(255,255,255,0),#F9C6DA 20%,#DCCBFA 40%,#BFDDF8 60%,#FAE6BE 80%,rgba(255,255,255,0))}
 #aWord{position:absolute;left:0;right:0;top:384px;text-align:center;font:400 120px/1.1 var(--se);color:#fff;white-space:nowrap;text-shadow:0 0 34px rgba(214,196,255,.55)}
 #aIpa{position:absolute;left:0;right:0;top:532px;text-align:center;font:400 21px/1 "DejaVu Sans",var(--sa);color:rgba(255,255,255,.7)}
@@ -84,6 +86,7 @@ html,body{margin:0;width:540px;height:960px;overflow:hidden;background:#15121C}
 #vig{background:radial-gradient(ellipse 80% 70% at 50% 48%,rgba(10,6,20,0) 55%,rgba(10,6,20,.5) 100%);pointer-events:none}
 #flash{background:#fff;opacity:0;pointer-events:none}
 #fade{background:#15121C;opacity:0;pointer-events:none}
+#dim{background:radial-gradient(ellipse 70% 55% at 50% 48%,rgba(30,10,30,.55),#07050C 80%);opacity:0;pointer-events:none}
 
 /* 隐藏款面纱 */
 .veil{position:absolute;left:0;top:0;right:0;bottom:0;border-radius:var(--card-radius,4.55% / 3.5%);overflow:hidden;

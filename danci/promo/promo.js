@@ -260,7 +260,10 @@
     /* 镜头震动 */
     var s1 = shake(t, 8.0, 9, .45), s2 = shake(t, 17.5, 7, .35), s3 = shake(t, 13.5, 5, .3);
     var pu = pulse(t), drift = Math.sin(t * .6) * .35;
-    world.style.transform = 'translate(' + (s1[0] + s2[0] + s3[0]) + 'px,' + (s1[1] + s2[1] + s3[1]) + 'px) scale(' + (1 + pu * .012) + ') rotate(' + drift + 'deg)';
+    // 每段都有缓慢推近的镜头
+    var push = 0;
+    [[0, 3], [3, 6.7], [7, 10.5], [10.5, 14.2], [14.4, 17.4], [17.5, 20]].forEach(function (w) { if (t >= w[0] && t < w[1]) push = E.io3(seg(t, w[0], w[1])) * .035; });
+    world.style.transform = 'translate(' + (s1[0] + s2[0] + s3[0]) + 'px,' + (s1[1] + s2[1] + s3[1]) + 'px) scale(' + (1 + push + pu * .012) + ') rotate(' + drift + 'deg)';
     bgN.style.filter = bgG.style.filter = 'brightness(' + (1 + pu * .12) + ')';
 
     streaks(t, .4, 2.35, function (p) { return .15 + .85 * p; });
@@ -281,6 +284,9 @@
     for (var k = 1; k < 7; k++) fl = Math.max(fl, flashAt(t, D_T0 + k * .5, k === 6 ? .3 : .14, .1));
     $('#flash').style.opacity = cl(fl);
     $('#fade').style.opacity = Math.max(1 - seg(t, 0, .35), seg(t, 19.55, 20));
+    // 隐藏款出现前骤暗一下（配心跳），再被金光点亮
+    var dk = E.io3(seg(t, 12.95, 13.2)) * (1 - E.out3(seg(t, 13.48, 13.62)));
+    $('#dim').style.opacity = (dk * (.92 + .05 * Math.sin((t - 13) * 30))).toFixed(3);
   }
 
   function fgFX(t) {
@@ -307,8 +313,11 @@
     var on = t < 3.02; show(sA, on); if (!on) return;
     var ki = -1; for (var i = 0; i < A_T.length; i++) if (t >= A_T[i]) ki = i;
     var kick = $('#aKick'), line = $('#aLine'), word = $('#aWord'), ipa = $('#aIpa'), no = $('#aNo');
-    var kp = E.out3(seg(t, .15, .9));
-    kick.style.opacity = kp; kick.style.letterSpacing = lerp(1.1, .5, kp) + 'em';
+    // 开场钩子：两行字先后浮现，第二行金色
+    var k1 = E.out3(seg(t, .12, .8)), k2 = E.out3(seg(t, .55, 1.3));
+    kick.firstChild.style.opacity = k1; kick.firstChild.style.letterSpacing = lerp(1, .5, k1) + 'em';
+    kick.lastChild.style.opacity = k2; kick.lastChild.style.transform = 'translateY(' + (1 - k2) * 10 + 'px)';
+    kick.lastChild.style.filter = 'blur(' + ((1 - k2) * 6).toFixed(2) + 'px) drop-shadow(0 0 12px rgba(242,215,162,.45))';
     line.style.transform = 'scaleX(' + E.outExpo(seg(t, .1, .8)) + ')';
     if (ki < 0) { word.style.opacity = 0; ipa.style.opacity = 0; no.style.opacity = 0; return; }
     var w = W(A_WORDS[ki]), age = t - A_T[ki], last = ki === A_WORDS.length - 1;
