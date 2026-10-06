@@ -65,14 +65,14 @@ python3 tools/gift_codes.py --year --force                                     #
 
 ## 宣传片
 
-`promo/单词手账-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音用 app 里的真人录音。隐藏款只露出光缝里的一窄条。
+`promo/不止单词-宣传片.mp4`：20 秒竖版（1080×1920，30fps）。画面直接用 app 的镭射卡、蜡封和字体逐帧渲染；配乐和音效全部合成，音效与小工具共用 `tools/sfx.py`，发音用 app 里的真人录音。隐藏款只露出光缝里的一窄条。
 
 ```bash
 python3 tools/build.py                                   # 先生成 dist/
 node promo/capture.js /tmp/frames 30 0 20 4              # 逐帧截图
 python3 promo/music.py /tmp/music.wav                    # 配乐
 ffmpeg -framerate 30 -i /tmp/frames/%04d.jpg -i /tmp/music.wav -c:v libx264 -crf 17 -pix_fmt yuv420p \
-  -c:a aac -b:a 192k -af loudnorm=I=-14:TP=-1.5 -movflags +faststart -shortest promo/单词手账-宣传片.mp4
+  -c:a aac -b:a 192k -af loudnorm=I=-14:TP=-1.5 -movflags +faststart -shortest promo/不止单词-宣传片.mp4
 ```
 
 ## 声音
