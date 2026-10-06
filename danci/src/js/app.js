@@ -1315,7 +1315,7 @@
     const L = land ? x + W * .052 : x + W * .08, R = land ? x + W * .948 : x + W * .92;
     ctx.font = `700 ${u * .17}px ${SA}`; spaced(ctx, v.tier, L, y + H * (land ? .07 : .052) + u * .17, u * .045, 'left');
     ctx.font = `italic 400 ${u * .27}px ${SE}`; ctx.globalAlpha = .85; ctx.fillText(v.en, L, y + H * (land ? .122 : .086) + u * .27); ctx.globalAlpha = 1;
-    ctx.font = `300 ${u * .16}px ${SC}`; ctx.textAlign = 'right'; ctx.globalAlpha = .75; ctx.fillText(pad3(w.i) + ' / 688', R, y + H * (land ? .07 : .052) + u * .16); ctx.globalAlpha = 1; ctx.textAlign = 'left';
+    ctx.font = `300 ${u * .16}px ${SC}`; ctx.textAlign = 'right'; ctx.globalAlpha = .75; ctx.fillText(w.no || (pad3(w.i) + ' / 688'), R, y + H * (land ? .07 : .052) + u * .16); ctx.globalAlpha = 1; ctx.textAlign = 'left';
     // 单词
     ctx.fillStyle = v.id === 'x1' ? '#F6E2B4' : ink;
     ctx.font = `400 ${u * (land ? 1.08 : 1)}px ${SE}`;
@@ -1513,6 +1513,70 @@
     ctx.fillStyle = fg; ctx.font = `600 30px ${SC}`; ctx.fillText('不止单词 · 高考核心 688 词', W / 2, H - 70);
     return cv;
   }
+  /* 兑换码福利海报（运营用，tools/gift_posters.js 调用；小工具里不出现）：SSR 立体卡上印兑换码 */
+  async function giftPoster(o) {
+    const vid = o.vid || 'ssr1', v = C.BY_ID[vid];
+    await fontsReady();
+    const imgs = { face: await loadImg('img/face/' + vid + '.webp'), art: await loadImg('img/art/' + vid + '.webp'), seal: await loadImg('img/seal/' + (o.seal || 'crown') + '.webp') };
+    const bg = await loadImg('img/bg/night.webp');
+    const W = 1080, H = 1440;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    bgFill(ctx, W, H, bg, true);
+    const cw = 520, ch = cw * 386 / 250, X = W / 2, Y = 330 + ch / 2;
+    // 背光 + 放射光
+    const rg = ctx.createRadialGradient(X, Y, 0, X, Y, W * .62);
+    rg.addColorStop(0, 'rgba(190,160,255,.45)'); rg.addColorStop(.5, 'rgba(190,160,255,.12)'); rg.addColorStop(1, 'rgba(190,160,255,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(X, Y); ctx.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 28; i++) {
+      const a = i / 28 * Math.PI * 2 + .1, wd = .025 + (i % 3) * .012;
+      const g = ctx.createLinearGradient(0, 0, Math.cos(a) * 900, Math.sin(a) * 900);
+      g.addColorStop(0, 'rgba(255,236,250,.14)'); g.addColorStop(.7, 'rgba(255,236,250,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a - wd) * 900, Math.sin(a - wd) * 900); ctx.lineTo(Math.cos(a + wd) * 900, Math.sin(a + wd) * 900); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    // 标题
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.72)'; ctx.font = `500 26px ${SA}`;
+    spaced(ctx, '不止单词 · 本周福利', W / 2, 110, 10, 'center');
+    const tg = ctx.createLinearGradient(0, 140, 0, 220);
+    tg.addColorStop(0, '#FFF3D6'); tg.addColorStop(.55, '#E9C27E'); tg.addColorStop(1, '#FFF0CF');
+    ctx.fillStyle = tg; ctx.font = `600 66px ${SC}`; spaced(ctx, `送你 ${o.tickets || 10} 张抽卡券`, W / 2, 212, 6, 'center');
+    // 卡面：原来放单词的位置印兑换码
+    const KX = 1.6, face = document.createElement('canvas'); face.width = Math.round(cw * KX); face.height = Math.round(ch * KX);
+    const fctx = face.getContext('2d'); fctx.scale(KX, KX);
+    await drawCardTo(fctx, 0, 0, cw, ch, vid, { i: 0, no: o.week ? '第 ' + o.week + ' 周' : 'GIFT', w: o.code, en: o.line || 'A little gift, sealed for you.', cn: '兑换码 · ' + (o.tickets || 10) + ' 张抽卡券', src: '' }, imgs);
+    const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
+    const box = card3D(layer.getContext('2d'), face, X, Y, cw, ch, {
+      ry: -18 * Math.PI / 180, rx: 8 * Math.PI / 180, D: 2200, depth: cw * .03,
+      edge: ['#FFFFFF', '#F1E8F2', '#D9CCE0', '#B7A8C2'], rim: 'rgba(255,255,255,.7)',
+      shadow: 'rgba(0,0,0,.7)', glow: 'rgba(150,130,255,.35)', soft: true
+    });
+    const floor = box.bot + 4, refl = document.createElement('canvas'); refl.width = W; refl.height = H;
+    const rctx = refl.getContext('2d');
+    rctx.save(); rctx.translate(0, floor * 2); rctx.scale(1, -1); rctx.drawImage(layer, 0, 0); rctx.restore();
+    const fade = rctx.createLinearGradient(0, floor, 0, floor + 110);
+    fade.addColorStop(0, 'rgba(0,0,0,.24)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+    rctx.globalCompositeOperation = 'destination-in'; rctx.fillStyle = fade; rctx.fillRect(0, 0, W, H);
+    ctx.drawImage(refl, 0, 0); ctx.drawImage(layer, 0, 0);
+    // 星光
+    let sd = (o.code || 'x').charCodeAt(0) * 97;
+    const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 18; i++) {
+      const a = rnd() * Math.PI * 2, r = 360 + rnd() * 120, x = X + Math.cos(a) * r * .95, y = Y + Math.sin(a) * r * 1.1;
+      if (y < 280 || y > floor + 30) continue;
+      ctx.globalAlpha = .45 + rnd() * .5; star4(ctx, x, y, 6 + rnd() * 16);
+    }
+    ctx.globalAlpha = 1;
+    // 说明
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFFFFF'; ctx.font = `600 32px ${SC}`; spaced(ctx, '长按首页火漆 · 输入兑换码', W / 2, Math.min(H - 170, floor + 120), 4, 'center');
+    ctx.fillStyle = 'rgba(255,255,255,.66)'; ctx.font = `400 25px ${SA}`;
+    ctx.fillText((o.from && o.to ? o.from + ' – ' + o.to + ' 有效 · ' : '') + '每台手机限领一次', W / 2, Math.min(H - 120, floor + 170));
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = `600 28px ${SC}`; ctx.fillText('不止单词 · 高考核心 688 词', W / 2, H - 56);
+    return cv;
+  }
   async function resultPoster(R, theme, safe) {
     await fontsReady();
     const W = 1080, H = 1440, dark = theme === 'night';
@@ -1668,6 +1732,6 @@
     $('#boot').hidden = true; $('#app').hidden = false;
     show('home');
   }
-  window.__danci = { get S() { return S; }, rates, multOf, drawOne, WORDS, cardPoster, resultPoster, show, revealOne, setLast(R) { LAST = R; show('result'); renderResult(); } }; // 自检用
+  window.__danci = { get S() { return S; }, rates, multOf, drawOne, WORDS, cardPoster, resultPoster, giftPoster, show, revealOne, setLast(R) { LAST = R; show('result'); renderResult(); } }; // 自检用
   boot();
 })();
