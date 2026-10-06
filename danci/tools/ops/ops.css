@@ -1,0 +1,22 @@
+#ops{position:fixed;left:0;top:0;right:0;bottom:0;z-index:200;overflow-y:auto;-webkit-overflow-scrolling:touch;background:#15121C url(../img/bg/night.webp) center/cover;color:#fff;padding:calc(64px + var(--safe-t,0px)) 20px 40px;font-family:var(--sa);text-align:center}
+#ops button{-webkit-appearance:none;appearance:none;border:0;font:inherit;color:inherit}
+.op-h b{display:block;font:600 22px var(--sc);letter-spacing:.2em}
+.op-h span{display:block;margin-top:6px;font-size:12px;color:#F7A8C0;letter-spacing:.1em}
+.op-w{display:-webkit-box;display:flex;align-items:center;justify-content:space-between;margin:20px auto 0;max-width:360px}
+.op-w button{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);font-size:28px}
+.op-w b{display:block;font:600 20px var(--sc)}
+.op-w span{display:block;margin-top:4px;font-size:13px;color:rgba(255,255,255,.7)}
+.op-code{margin:16px auto 0;font:600 26px/1 var(--sa);letter-spacing:.12em;color:#F2D7A2;-webkit-user-select:text;user-select:text}
+.op-t{margin-top:16px}
+.op-t button{height:36px;padding:0 16px;margin:0 4px;border-radius:99px;background:rgba(255,255,255,.1);font-size:14px}
+.op-t button.on{background:linear-gradient(115deg,#F9C6DA,#DCCBFA,#BFDDF8,#FAE6BE);color:#1F1C24;font-weight:600}
+.op-img{position:relative;margin:16px auto 0;max-width:360px}
+.op-img img{display:block;width:100%;border-radius:16px;box-shadow:0 16px 40px rgba(0,0,0,.45)}
+.op-img p{position:absolute;left:0;right:0;top:45%;font-size:14px}
+.op-note{margin:18px auto 0;max-width:360px;padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.08);text-align:left}
+.op-note b{display:block;font-size:15px}
+.op-note pre{margin-top:8px;white-space:pre-wrap;font:400 13px/1.6 var(--sa);color:rgba(255,255,255,.8)}
+.op-a{display:-webkit-box;display:flex;margin:18px auto 0;max-width:360px}
+.op-a button{-webkit-box-flex:1;flex:1;height:52px;border-radius:99px;background:rgba(255,255,255,.12);font-size:16px;font-weight:600;letter-spacing:.1em}
+.op-a button+button{margin-left:12px;background:linear-gradient(115deg,#F9C6DA,#DCCBFA,#BFDDF8,#FAE6BE);color:#1F1C24}
+.op-tip{min-height:20px;margin-top:12px;font-size:13px;color:#F2D7A2}
