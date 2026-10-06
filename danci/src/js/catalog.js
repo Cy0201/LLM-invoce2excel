@@ -42,9 +42,9 @@
     { t: 'fine', cn: '雅漆', rate: 24, hype: 2, v: [{ id: 'diamond', cn: '冰蓝钻石' }, { id: 'pearl', cn: '珍珠贝壳' }, { id: 'sunset', cn: '晚霞心' }] },
     { t: 'gold', cn: '金漆', rate: 14, hype: 3, v: [{ id: 'crown', cn: '玫瑰金王冠' }, { id: 'moon', cn: '月光新月' }] },
     { t: 'zodiac', cn: '星座漆', rate: 14, hype: 3, v: [{ id: 'aries', cn: '白羊座' }, { id: 'taurus', cn: '金牛座' }, { id: 'gemini', cn: '双子座' }, { id: 'cancer', cn: '巨蟹座' }, { id: 'leo', cn: '狮子座' }, { id: 'virgo', cn: '处女座' }, { id: 'libra', cn: '天秤座' }, { id: 'scorpio', cn: '天蝎座' }, { id: 'aquarius', cn: '水瓶座' }, { id: 'capricorn', cn: '摩羯座' }, { id: 'capricorn_gold', cn: '鎏金摩羯' }] },
-    { t: 'secret', cn: '秘漆', rate: 5, hype: 4, v: [{ id: 'aurora', cn: '极光新月' }, { id: 'midnight', cn: '午夜星月' }] },
+    { t: 'secret', cn: '秘漆', rate: 5, hype: 4, v: [{ id: 'aurora', cn: '极光新月' }, { id: 'midnight', cn: '午夜星月' }, { id: 'sprig', cn: '橄榄枝' }] },
     { t: 'hidden', cn: '隐藏', rate: 2.4, hype: 5, hidden: 1, v: [{ id: 'sagittarius', cn: '星辉射手' }, { id: 'pisces', cn: '幻彩双鱼' }] },
-    { t: 'mythic', cn: '超级隐藏', rate: 0.6, hype: 6, hidden: 1, v: [{ id: 'apple', cn: '伊甸禁果' }, { id: 'serpent', cn: '低语之蛇' }, { id: 'luna', cn: '深蓝弦月' }, { id: 'bloom', cn: '晨野花' }, { id: 'bloom2', cn: '暮野花' }, { id: 'sprig', cn: '橄榄枝' }] }
+    { t: 'mythic', cn: '超级隐藏', rate: 0.6, hype: 6, hidden: 1, v: [{ id: 'apple', cn: '伊甸禁果' }, { id: 'serpent', cn: '低语之蛇' }, { id: 'luna', cn: '深蓝弦月' }, { id: 'bloom2', cn: '金缕花信' }] }
   ];
   var SEAL = {};
   SEAL_TIERS.forEach(function (t, ti) { t.rank = ti; t.v.forEach(function (x) { x.tier = t.t; x.tcn = t.cn; x.rank = ti; x.hype = t.hype; x.hidden = !!t.hidden; x.p = t.rate / t.v.length; SEAL[x.id] = x; }); });

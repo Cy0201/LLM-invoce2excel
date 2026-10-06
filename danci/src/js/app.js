@@ -46,6 +46,8 @@
     Object.keys(st.cards).forEach(k => {
       const o = st.cards[k] || {};
       Object.keys(o).forEach(id => { if (typeof o[id] === 'number') o[id] = { n: o[id], s: { star: o[id] } }; else if (!o[id] || !o[id].s) o[id] = { n: (o[id] && o[id].n) || 1, s: { star: 1 } }; });
+      // 已下架的火漆（如晨野花）从存档里去掉；去完一个不剩就记成素漆星
+      Object.keys(o).forEach(id => { const e = o[id]; Object.keys(e.s).forEach(sid => { if (!C.SEAL[sid]) delete e.s[sid]; }); if (!Object.keys(e.s).length) e.s = { star: e.n || 1 }; });
     });
     return st;
   }
