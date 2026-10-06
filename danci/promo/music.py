@@ -269,12 +269,14 @@ for r, t0 in enumerate(B_T):
     fly = .55 if r == 0 else max(.3, min(.45, dur * 1.6))
     pluck(74, pick, .05, 0, .08)                     # 点选
     ding(pick + fly, r)
-# 发音：和 app 同一套 TTS 声线（tools/tts.py 的单段缓存，44.1kHz）
+# 真人发音：直接取 app 里的录音
 def voice(word_no):
-    import soundfile as sf
-    y, sr = sf.read(os.path.join(HERE, '..', 'tools', '.tts', 'clips', 'w', '%d.wav' % word_no))
-    assert sr == SR
-    return y / (np.max(np.abs(y)) + 1e-9) * .8
+    js = open(os.path.join(HERE, '..', 'src', 'js', 'audio-clips.js'), encoding='utf-8').read()
+    clips = json.loads(js[js.index('{'):js.rindex('}') + 1])
+    import base64
+    mp3 = base64.b64decode(clips[str(word_no)])
+    raw = subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', 'pipe:0', '-f', 's16le', '-ac', '1', '-ar', str(SR), 'pipe:1'], input=mp3, capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.int16).astype(np.float64) / 32768
 
 
 put(dry, voice(3), 2.24, .62, 0, rev=.25)      # still（词流停下）

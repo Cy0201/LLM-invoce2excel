@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""蜡封邮戳抠图：白底照片 → 透明底 webp（统一正圆、统一尺寸与留白）
+"""蜡封抠图：白底照片 → 透明底 webp（统一正圆、统一尺寸与留白）
 
 用法：python3 tools/seals.py            # 处理 seals-src/*.jpg|png → src/img/seal/<同名>.webp
 依赖：pip install opencv-python-headless scipy scikit-image pillow numpy

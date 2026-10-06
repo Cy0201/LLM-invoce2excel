@@ -6,10 +6,11 @@
   --sc:"Noto Serif SC","Songti SC","STSong",serif;
   --sa:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
   --holo:linear-gradient(115deg,#F9C6DA 0%,#DCCBFA 22%,#BFDDF8 42%,#C9F2E2 60%,#FAE6BE 78%,#F9C6DA 100%);
-  --safe-t:0px;--safe-b:0px;
+  --nav-h:44px;  /* 小红书容器在状态栏下方盖了一排自己的按钮（返回、头像、分享），页面顶部要让开 */
+  --safe-t:var(--nav-h);--safe-b:0px;
 }
 @supports (padding-top: env(safe-area-inset-top)){
-  :root{--safe-t:var(--safe-area-inset-top, env(safe-area-inset-top, 0px));--safe-b:var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))}
+  :root{--safe-t:calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + var(--nav-h));--safe-b:var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))}
 }
 html{touch-action:manipulation;-webkit-text-size-adjust:100%}
 html.lock,html.lock body{overflow:hidden}
@@ -587,7 +588,7 @@ img{max-width:100%;display:block}
   .stage-on .stage,.tc,.qc.in{-webkit-animation-duration:.01s;animation-duration:.01s}
 }
 
-/* 邮戳：详情页切换、图鉴、概率表 */
+/* 蜡封：详情页切换、图鉴、概率表 */
 .schips{display:-webkit-box;display:flex;flex-wrap:wrap;justify-content:center;margin-top:8px}
 .schip{display:-webkit-box;display:flex;align-items:center;height:32px;padding:0 10px 0 4px;border-radius:99px;background:rgba(255,255,255,.1);font:500 12px var(--sa);color:rgba(255,255,255,.85);margin:3px}
 .schip img{width:24px;height:24px;margin-right:5px}
@@ -648,14 +649,7 @@ img{max-width:100%;display:block}
 .lt-acts .btn{-webkit-box-flex:1;flex:1}
 .lt-acts .btn+.btn{margin-left:12px}
 
-/* 例句朗读按钮 */
-.fb-l,.qline{position:relative;padding-right:46px}
-.qline{text-align:left}
-.lnp{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;display:-webkit-box;display:flex;align-items:center;justify-content:center;color:var(--ink2);background:rgba(255,255,255,.85);box-shadow:inset 0 0 0 1px rgba(31,28,36,.08),0 4px 10px rgba(150,110,180,.15)}
-.lnp .ic{width:16px;height:16px}
-.lnp.on{color:#1F1C24;background:var(--holo);box-shadow:0 0 0 4px rgba(220,203,250,.35);-webkit-animation:lnpOn 1.2s ease-in-out infinite;animation:lnpOn 1.2s ease-in-out infinite}
-@-webkit-keyframes lnpOn{50%{box-shadow:0 0 0 8px rgba(220,203,250,.12)}}
-@keyframes lnpOn{50%{box-shadow:0 0 0 8px rgba(220,203,250,.12)}}
-.lnp.txt{position:static;width:auto;height:30px;padding:0 12px 0 9px;border-radius:99px;margin-left:8px;font:500 12px var(--sa);letter-spacing:.08em;color:#fff;background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
-.lnp.txt .ic{margin-right:4px}
-.lnp.txt.on{color:#1F1C24;background:var(--holo)}
+.gain .odds-l{margin-left:auto;padding:6px 12px;border-radius:99px;font:400 12px var(--sa);color:var(--ink3);box-shadow:inset 0 0 0 1px rgba(31,28,36,.1)}
+
+/* 闪粉纹理：换成预渲染的无缝位图。cards-css 现场生成的 SVG（feTurbulence + 发光滤镜）在 iOS 上平铺会出现一道道横纹，也更耗 GPU */
+.holo-card{--glitter:url(../img/tex/glitter.webp)}

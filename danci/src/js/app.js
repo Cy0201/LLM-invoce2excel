@@ -228,7 +228,7 @@
     const own = S.cards[w.k] || (S.cards[w.k] = {});
     const e = own[v.id] || (own[v.id] = { n: 0, s: {} });
     const newCard = !e.n, newSeal = !e.s[seal];
-    const dup = !newCard && !newSeal;   // 单词、卡面、邮戳都一样才算重复
+    const dup = !newCard && !newSeal;   // 单词、卡面、蜡封都一样才算重复
     e.n++; e.s[seal] = (e.s[seal] || 0) + 1;
     const dust = dup ? t.dust : 0;
     S.dust += dust;
@@ -242,19 +242,19 @@
   function collectedVariants() { const s = {}; Object.keys(S.cards).forEach(k => ownVids(k).forEach(id => { s[id] = 1; })); return Object.keys(s).length; }
   const DUST_PER_TICKET = 20;
 
-  /* ================= 声音：发音 / 例句 / 音效 =================
-   * 发音和例句：包内 m4a（tools/tts.py 生成，每组 20 段拼成一个文件），用 <audio> 播放并跳到对应的一段。
-   *   容器 CSP 不允许 <audio> 用 data: 地址，只能引用包内文件；<audio> 也不受 iOS 静音键影响。
-   * 音效：Web Audio 优先（低延迟、可叠加，数据内联在 sfx-clips.js）；起不来时改用包内 audio/fx/*.mp3。
-   * iOS：只有 touchend / click 里的 resume() / play() 才算用户手势，所以每次手势都重试，直到真正解锁；
-   * audioSession = playback 让静音键不再静掉 Web Audio（iOS 17+）。 */
+  /* ================= 声音：发音录音 + 音效 =================
+   * Web Audio 优先（低延迟、可叠加）；上下文起不来（容器限制、没解锁）时退回 <audio> 元素；
+   * 没有录音的词才用系统朗读。
+   * iOS：只有 touchend / click 里的 resume() 才算用户手势，所以每次手势都重试，直到真正跑起来；
+   * audioSession = playback 让静音键不再静掉网页声音（iOS 17+）。 */
   const TTS = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
-  const SILENT = 'audio/fx/silent.mp3';
+  const SILENT = 'audio/fx/silent.mp3';  // 容器 CSP 不允许 <audio> 用 data: 地址，用包内文件
+  function clips() { return window.AUDIO_INLINE || null; }
   function sfxClips() { return window.SFX_INLINE || null; }
   function bytesOf(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
   const bufCache = {}, badDecode = {};
-  let AC = null;
+  let AC = null, voiceSrc = null, token = 0;
   function getAC() {
     if (!AC) { try { const K = window.AudioContext || window.webkitAudioContext; if (K) AC = new K(); } catch (e) { AC = null; } }
     return AC;
@@ -265,7 +265,7 @@
     try { const p = ac.resume(); if (p && p.catch) p.catch(() => { }); } catch (e) { }
     try { const b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0); } catch (e) { }
   }
-  // <audio> 元素：一个给发音和例句，六个轮流给音效。在手势里先各播一次静音文件，之后才能被程序随时播放
+  // <audio> 元素池：一个给发音，六个轮流给音效。在手势里先各播一次静音，之后才能被程序随时播放
   const voiceEl = new Audio(), sfxEls = [new Audio(), new Audio(), new Audio(), new Audio(), new Audio(), new Audio()];
   let sfxIdx = 0, mediaReady = false;
   [voiceEl].concat(sfxEls).forEach(el => { el.preload = 'auto'; el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', ''); });
@@ -274,11 +274,10 @@
     [voiceEl].concat(sfxEls).forEach(el => {
       if (el.dataset.ok || !el.paused) return;
       try {
-        if (el === voiceEl) vSrc = '';
-        el.src = SILENT;
+        el.src = SILENT; el.volume = 0;
         const p = el.play();
-        const ok = () => { el.dataset.ok = '1'; if ([voiceEl].concat(sfxEls).every(x => x.dataset.ok)) mediaReady = true; };
-        if (p && p.then) p.then(ok, () => { }); else ok();
+        const ok = () => { el.dataset.ok = '1'; el.volume = 1; if ([voiceEl].concat(sfxEls).every(x => x.dataset.ok)) mediaReady = true; };
+        if (p && p.then) p.then(ok, () => { el.volume = 1; }); else ok();
       } catch (e) { }
     });
   }
@@ -286,7 +285,7 @@
   ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
   document.addEventListener('visibilitychange', () => { if (!document.hidden && AC && AC.state !== 'running') wakeAC(); });
 
-  // 音效
+  // 解码（带缓存）；失败的条目记下来，以后直接走 <audio>
   function decode(key, b64, ok, fail) {
     if (bufCache[key]) { ok(bufCache[key]); return; }
     if (badDecode[key]) { fail(); return; }
@@ -298,94 +297,86 @@
       if (p && p.then) p.then(good, bad);
     } catch (e) { bad(); }
   }
-  function mediaFx(name, vol) {
-    const el = sfxEls[sfxIdx++ % sfxEls.length];
+  function mediaPlay(el, src, vol, onend) {
     try {
-      el.src = 'audio/fx/' + name + '.mp3'; el.volume = vol == null ? 1 : vol;
-      const p = el.play(); if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { });
-    } catch (e) { }
+      el.onended = onend || null; el.onerror = onend || null;
+      el.src = src; el.volume = vol == null ? 1 : vol;
+      const p = el.play();
+      if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { if (onend) onend(); });
+      return true;
+    } catch (e) { if (onend) onend(); return false; }
   }
-  function playFx(name, vol) {
-    const X = sfxClips();
+  // 播一段 Base64 MP3。voice=true 时打断上一段发音
+  function playClip(key, b64, opt) {
+    opt = opt || {};
+    const my = opt.voice ? token : 0, onend = opt.onend;
     wakeAC();
-    if (!X || !X[name] || !acRunning()) { mediaFx(name, vol); return; }
-    decode('s' + name, X[name], buf => {
-      if (!acRunning()) { mediaFx(name, vol); return; }
+    const fallback = () => {
+      if (opt.voice && my !== token) return;
+      // 音效用包内 audio/fx/*.mp3（容器不允许 <audio> 播 data: 地址）
+      const src = key[0] === 's' ? 'audio/fx/' + key.slice(1) + '.mp3' : 'data:audio/mpeg;base64,' + b64;
+      mediaPlay(opt.voice ? voiceEl : sfxEls[sfxIdx++ % sfxEls.length], src, opt.vol, onend);
+    };
+    if (!acRunning()) { fallback(); return; }
+    decode(key, b64, buf => {
+      if (opt.voice && my !== token) return;
+      if (!acRunning()) { fallback(); return; }
       try {
         const s = AC.createBufferSource(), g = AC.createGain();
-        s.buffer = buf; g.gain.value = vol == null ? 1 : vol;
-        s.connect(g); g.connect(AC.destination); s.start(0);
-      } catch (e) { mediaFx(name, vol); }
-    }, () => mediaFx(name, vol));
+        s.buffer = buf; g.gain.value = opt.vol == null ? 1 : opt.vol;
+        s.connect(g); g.connect(AC.destination);
+        if (onend) s.onended = () => { if (!opt.voice || my === token) onend(); };
+        s.start(AC.currentTime + (opt.delay || 0));
+        if (opt.voice) voiceSrc = s;
+      } catch (e) { fallback(); }
+    }, fallback);
   }
-  function sfx(name, vol, delay) {
-    if (!S.set.sound) return;
-    if (delay > 0) setTimeout(() => playFx(name, vol), delay * 1000); else playFx(name, vol);
-  }
-
-  // 发音 / 例句：每组一个音频文件，按 VOICE_MAP 跳到对应的一段
-  let vTok = 0, vSrc = '', vStop = 0, vPoll = 0;
   function stopVoice() {
-    vTok++; clearTimeout(vStop); clearInterval(vPoll);
+    token++;
+    try { if (voiceSrc) voiceSrc.stop(); } catch (e) { } voiceSrc = null;
     try { voiceEl.pause(); } catch (e) { }
     try { if (TTS) speechSynthesis.cancel(); } catch (e) { }
-    $$('.lnp.on').forEach(b => b.classList.remove('on'));
-  }
-  function playSeg(kind, k, onend) {
-    const M = window.VOICE_MAP, seg = M && M[kind] && M[kind][k];
-    if (!seg) return false;
-    stopVoice();
-    const my = vTok, el = voiceEl, src = 'audio/' + kind + '/' + pad2(Math.floor(k / M.g) + 1) + '.m4a';
-    let tries = 0;
-    const end = () => { if (my !== vTok) return; clearInterval(vPoll); try { el.pause(); } catch (e) { } if (onend) onend(); };
-    const fail = () => { if (my !== vTok) return; clearInterval(vPoll); vSrc = ''; el.muted = false; if (onend) onend(); };
-    const seek = () => { try { el.currentTime = Math.max(0, seg[0] - .03); } catch (e) { } };
-    el.muted = true; el.onerror = fail;
-    if (vSrc !== src) { vSrc = src; el.src = src; try { el.load(); } catch (e) { } } else seek();
-    // 元数据就绪、跳到位置后再取消静音，按时长停下（段与段之间留了静音，晚停一点也听不出来）
-    vPoll = setInterval(() => {
-      if (my !== vTok) { clearInterval(vPoll); return; }
-      if (++tries > 80) { fail(); return; }
-      if (el.readyState < 1) return;
-      if (el.seeking) return;
-      if (Math.abs(el.currentTime - seg[0]) > .3) { seek(); return; }
-      clearInterval(vPoll); el.muted = false;
-      if (el.paused) { const q = el.play(); if (q && q.catch) q.catch(fail); }
-      vStop = setTimeout(end, (seg[0] + seg[1] + .06 - el.currentTime) * 1000);
-    }, 40);
-    const p = el.play(); if (p && p.then) p.then(() => { el.dataset.ok = '1'; }, () => { });
-    return true;
   }
   function ttsSpeak(text, onend) {
     if (!TTS) { if (onend) onend(); return; }
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text); u.lang = 'en-GB'; u.rate = .86;
+      const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = .86;
       if (onend) { u.onend = onend; u.onerror = onend; }
       speechSynthesis.speak(u);
     } catch (e) { if (onend) onend(); }
   }
   function speak(word, onend) {
-    const k = BYW[word];
-    if (k != null && playSeg('w', k, onend)) return;
-    stopVoice(); ttsSpeak(word, onend);
+    const k = BYW[word], w = k != null ? WORDS[k] : null, CL = clips();
+    stopVoice();
+    if (!w || !CL || !CL[w.i]) { ttsSpeak(word, onend); return; }
+    playClip('w' + w.i, CL[w.i], { voice: true, onend: onend });
   }
-  // 例句朗读：点例句旁的小喇叭
-  function speakLine(k, btn) {
-    if (btn && btn.classList.contains('on')) { stopVoice(); return; }
-    const done = () => { if (btn) btn.classList.remove('on'); };
-    if (!playSeg('s', k, done)) { stopVoice(); ttsSpeak(WORDS[k].en, done); }
-    if (btn) btn.classList.add('on');
+  // 音效：合成好的 MP3（tools/sfx.py）；还没加载完时用振荡器顶一下
+  function sfx(name, vol, delay) {
+    if (!S.set.sound) return;
+    const X = sfxClips();
+    if (X && X[name]) { if (delay) setTimeout(() => playClip('s' + name, X[name], { vol: vol }), delay * 1000); else playClip('s' + name, X[name], { vol: vol }); return; }
+    const alt = { ok: [[880, .14], [1318.5, .22]], bad: [[220, .2, 'triangle', .14], [174.6, .28, 'triangle', .12]], done: [[784, .14], [988, .14], [1175, .14], [1568, .3]] }[name];
+    if (alt) tone(alt);
   }
-  document.addEventListener('click', e => {
-    const b = e.target.closest('[data-line]'); if (!b) return;
-    e.stopPropagation(); speakLine(+b.dataset.line, b);
-  });
-  const lineBtn = k => `<button type="button" class="lnp" data-line="${k}" aria-label="朗读例句">${icon('i-speaker-high')}</button>`;
+  function tone(seq) {
+    if (!S.set.sound) return;
+    try {
+      wakeAC(); if (!acRunning()) return;
+      let t = AC.currentTime + .01;
+      seq.forEach(x => {
+        const o = AC.createOscillator(), g = AC.createGain();
+        o.type = x[2] || 'sine'; o.frequency.value = x[0];
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(x[3] || .12, t + .015); g.gain.exponentialRampToValueAtTime(.0001, t + x[1]);
+        o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + x[1] + .02); t += x[1] * .62;
+      });
+    } catch (e) { }
+  }
   const sfxOk = () => sfx('ok');
   const sfxBad = () => sfx('bad');
   const sfxDone = () => sfx('done');
-  // 揭晓：按稀有度（卡面等级和邮戳取高）选音效，越稀有越隆重
+  // 揭晓：按稀有度（卡面等级和蜡封取高）选音效，越稀有越隆重
   const sfxRare = r => sfx(r >= 6 ? 'r6' : r >= 5 ? 'r5' : r >= 4 ? 'r4' : r >= 3 ? 'r3' : r >= 2 ? 'r2' : 'r0');
 
   /* ================= 通用 UI ================= */
@@ -518,7 +509,7 @@
     if (m === 'wrong') { startWrong(); return; }
     S.set.mode = m; save(); startGroup(m);
   });
-  $('#hQuote').addEventListener('click', () => { const k = +$('#hQuote').dataset.k; speakLine(k); openWord(k); });
+  $('#hQuote').addEventListener('click', () => { const k = +$('#hQuote').dataset.k; speak(WORDS[k].w); openWord(k); });
   $('#hTest').addEventListener('click', e => { if (e.target.closest('[data-act]')) return; startTest(); });
   $('#hTest').addEventListener('keydown', e => { if (e.key === 'Enter') startTest(); });
   $('#hStreak').addEventListener('click', () => toast(S.today.d === dayKey() && S.today.n ? `今天已答 ${S.today.n} 题` : '今天还没练'));
@@ -754,7 +745,7 @@
       stage.innerHTML = `<div class="flip" id="flip"><div class="flip-in">
           <div class="qc gl face">${spk}${tag}<div class="qw">${esc(w.w)}</div><div class="ipa">${esc(w.p)}</div></div>
           <div class="qc gl face back">${spk}${tag}<div class="qw sm">${esc(w.w)}</div><div class="qcn"><i>${esc(w.cp)}</i>${esc(w.cm)}</div>
-            <div class="qline">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}</span></div></div>
+            <div class="qline"><em>${esc(w.en)}</em><span>${esc(w.cn)}</span></div></div>
         </div></div>
         <div class="fbtns" id="fbtns">
           <button type="button" class="btn bad" data-r="0">不认识</button>
@@ -795,7 +786,7 @@
       <div class="fb-w"><b>${esc(w.w)}</b><span class="ipa">${esc(w.p)}</span><button type="button" class="spk sm gl" data-say2 aria-label="朗读">${icon('i-speaker-high')}</button></div>
       ${extra || ''}
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
-      <div class="fb-l">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
+      <div class="fb-l"><em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
       <button type="button" class="btn dark wide" id="nextBtn">${last ? '看成绩' : '下一题'}${icon('i-arrow-right')}</button>`;
     fb.hidden = false; requestAnimationFrame(() => fb.classList.add('on'));
     fb.querySelector('[data-say2]').addEventListener('click', () => speak(w.w));
@@ -893,9 +884,8 @@
     const wl = R.wrongs.length ? `<div class="wl gl"><h4>${icon('i-lightbulb')}错词</h4>${R.wrongs.map(w => `<button type="button" class="wr" data-k="${w.k}"><b>${esc(w.w)}</b><span>${esc(short(w))}</span></button>`).join('')}</div>` : '';
     if (R.kind === 'test') {
       body.innerHTML = `<div class="rh"><div class="k">全部测试</div><div class="sc">${R.right}<small>/ ${R.total}</small></div>
-          <div class="acc">${icon('i-sparkle-f')}正确率 ${R.pct}%${R.m > 1 ? ` · SSR 及以上概率 ${fmtM(R.m)}` : ' · 基础概率'}</div></div>
-        <div class="ladder gl"><h4>获得 ${R.gain} 张抽卡券<span>${R.m > 1 ? '灰色为原概率' : ''}</span></h4>${ladderHTML(R.m)}</div>
-        <div class="rule">${RULE_HTML}</div>
+          <div class="acc">${icon('i-sparkle-f')}正确率 ${R.pct}%</div></div>
+        <div class="gain gl"><img src="img/icon3d/ticket.webp" alt=""><div><b>抽卡券 ×${R.gain}</b>${R.m > 1 ? `<span>稀有加成 ${fmtM(R.m)}</span>` : ''}</div><button type="button" class="odds-l" data-act="odds">概率</button></div>
         ${wl}
         <div class="ra"><button type="button" class="btn soft" id="rShare">${icon('i-share-network')}晒成绩</button><button type="button" class="btn holo" data-act="draw">去抽卡 · ${ticketCount()} 张${icon('i-arrow-right')}</button></div>
         <button type="button" class="link" data-act="home">回到首页</button>`;
@@ -948,7 +938,7 @@
     const b = bestBatch(), m = b ? b.m : 1;
     openSheet(`<h3 class="sh-h">概率与保底<span>${m > 1 ? '当前使用 ' + fmtM(m) + ' 加成券' : '当前为基础概率'}</span></h3>
       <div class="ladder plain">${ladderHTML(m)}</div>
-      <h3 class="sh-h sm">邮戳<span>独立抽取</span></h3>
+      <h3 class="sh-h sm">蜡封<span>独立抽取</span></h3>
       <div class="sealodds">${SEAL_TIERS.slice().reverse().map(t => `<div class="so"><b>${t.cn}</b><span>${t.v.map(x => `<img src="img/seal/${x.id}.webp" alt="">`).join('')}</span><em>${fmtP(t.rate)}</em></div>`).join('')}</div>
       <div class="rule">${RULE_HTML}<br>重复的卡化为星尘，${DUST_PER_TICKET} 星尘换 1 张抽卡券</div>`);
   }
@@ -1014,8 +1004,8 @@
       <div class="orb"><i></i></div>
       <div class="rl"><div class="r">${r.tier === 'SECRET' ? 'S E C R E T' : r.tier} · ${t.cn}</div><div class="f">${esc(v.en)}</div><div class="c">${esc(v.cn)}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="rvStage"></div>
-      <div class="rinfo">${t.cn} ${fmtP(r.p)} × ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」${fmtP(r.sp)}${r.pity ? ' · ' + r.pity + ' 保底' : ''}<br>
-        ${r.rank >= 3 && r.srank >= 2 ? `组合概率 <b>${fmtP(r.p * r.sp / 100)}</b> · ` : ''}${r.dup ? `重复获得 · 星尘 +${r.dust}` : r.newCard ? (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`) : `新邮戳 · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」`}</div>
+      <div class="rinfo">${t.cn} · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」${r.pity ? ' · ' + r.pity + ' 保底' : ''}<br>
+        ${r.dup ? `重复获得 · 星尘 +${r.dust}` : r.newCard ? (r.rank >= 3 ? `这是你卡册里的第 <b>${nth}</b> 张${t.cn}` : `新卡 · 已放进卡册第 ${w.g} 页`) : `新蜡封 · ${SEAL[r.seal].tcn}「${SEAL[r.seal].cn}」`}</div>
       <div class="racts"><button type="button" class="btn ghost" id="rvShare">晒这张卡</button><button type="button" class="btn holo" id="rvOk">${ticketCount() ? '再抽一张' : '收进卡册'}</button></div>`;
     const stage = $('#rvStage');
     const made = CardKit.make(r.vid, w, { interactive: true, lit: true, seal: r.seal });
@@ -1080,7 +1070,7 @@
     $('#vwBody').innerHTML = `
       <div class="rtop"><button type="button" class="cl" id="vwX" aria-label="关闭">${icon('i-x')}</button><div class="tkt">${esc(v.tier)} · ${t.cn}</div></div>
       <div class="stage${v.land ? ' land' : ''}" id="vwStage"></div>
-      <div class="vinfo"><div class="vw-w"><b>${esc(w.w)}</b><span>${esc(w.p)}</span><button type="button" class="spk sm" id="vwSay" aria-label="朗读">${icon('i-speaker-high')}</button><button type="button" class="lnp txt" data-line="${k}" aria-label="朗读例句">${icon('i-speaker-high')}例句</button></div>
+      <div class="vinfo"><div class="vw-w"><b>${esc(w.w)}</b><span>${esc(w.p)}</span><button type="button" class="spk sm" id="vwSay" aria-label="朗读">${icon('i-speaker-high')}</button></div>
         <div class="vw-m">${esc(short(w))}</div>
         ${owned.length > 1 ? `<div class="vchips">${chips}</div>` : ''}
         <div class="schips">${schips}</div></div>
@@ -1111,7 +1101,7 @@
     const counts = ORDER.map(t => [t, tierOwned(t)]).reverse();
     const col = ws.filter(w => ownVids(w.k).length).length;
     $('#aBody').innerHTML = `
-      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 邮戳 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
+      <header class="bh"><h2>卡册</h2><span class="bh-c"><b>${collectedWords()}</b> / ${N} 词 · 卡面 <b>${collectedVariants()}</b> / 18 · 蜡封 <b>${Object.keys(sealsOwned()).length}</b> / ${Object.keys(SEAL).length}</span></header>
       <div class="rar">${counts.map(x => `<span class="gl ${tierCls(x[0])}"><i></i>${TIER[x[0]].cn} ${x[1]}</span>`).join('')}</div>
       <div class="pagec gl" id="aPage">
         <div class="pt"><span>第 ${g + 1} 组<small>No.${pad3(ws[0].i)}–${pad3(ws[ws.length - 1].i)}</small></span><span><b>${col}</b> / ${ws.length}</span></div>
@@ -1158,7 +1148,7 @@
     const rows = $('#gRows');
     C.TIERS.slice().reverse().forEach(t => {
       const row = document.createElement('div'); row.className = 'grow ' + tierCls(t.t);
-      row.innerHTML = `<div class="glab"><b>${t.t}</b><span>${t.cn} · ${t.v.length} 款</span><em>${fmtP(t.rate)}</em></div><div class="gcards"></div>`;
+      row.innerHTML = `<div class="glab"><b>${t.t}</b><span>${t.cn} · ${t.v.length} 款</span></div><div class="gcards"></div>`;
       const cs = row.querySelector('.gcards');
       t.v.forEach(v => {
         const cell = document.createElement('div'); cell.className = 'gcell' + (v.land ? ' land' : '');
@@ -1180,9 +1170,9 @@
       rows.appendChild(row);
     });
     const so = sealsOwned();
-    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">邮戳图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
-      SEAL_TIERS.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span><em>${fmtP(t.rate)}</em></div><div class="gseals">` +
-        t.v.map(x => `<div class="gseal${so[x.id] ? '' : ' locked'}"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}<span>${fmtP(x.p)}</span></p></div>`).join('') + '</div></div>').join(''));
+    rows.insertAdjacentHTML('beforeend', `<h2 class="gh2">蜡封图鉴<span>已收集 ${Object.keys(so).length} / ${Object.keys(SEAL).length}</span></h2><div class="gsub">Cachets de cire</div>` +
+      SEAL_TIERS.slice().reverse().map(t => `<div class="grow"><div class="glab"><b>${t.cn}</b><span>${t.v.length} 款</span></div><div class="gseals">` +
+        t.v.map(x => `<div class="gseal${so[x.id] ? '' : ' locked'}"><img src="img/seal/${x.id}.webp" alt=""><p>${esc(x.cn)}</p></div>`).join('') + '</div></div>').join(''));
     requestAnimationFrame(() => $$('#gRows .gcell').forEach(cell => { const box = cell.querySelector('.gbox'); const hc = box.querySelector('.holo-card'); if (hc) { const vid = Array.prototype.slice.call(hc.classList).filter(c => c.indexOf('v-') === 0)[0].slice(2); CardKit.fit(box, vid); } }));
   }
 
@@ -1242,7 +1232,7 @@
       <div class="wsh-meta">No.${w.i} · 第 ${w.g} 组 · 考频 ${w.f} · ${stl}</div>
       <div class="fb-m">${w.s.map(x => `<div><i>${esc(x[0])}.</i>${esc(senses(x[1]).join('；'))}</div>`).join('')}</div>
       ${w.note ? `<div class="fb-n">${esc(w.note)}</div>` : ''}
-      <div class="fb-l">${lineBtn(w.k)}<em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
+      <div class="fb-l"><em>${esc(w.en)}</em><span>${esc(w.cn)}${w.src ? ' — ' + esc(w.src) : ''}</span></div>
       ${owned.length ? `<div class="wsh-cards"><h4>已收集的卡面</h4><div class="wsh-row" id="wsCards"></div></div>` : '<div class="wsh-empty">还没有这张卡</div>'}
       <div class="sh-acts"><button type="button" class="btn soft" id="wsWrong">${icon(wr ? 'i-star-f' : 'i-star')}${wr ? '移出错词本' : '加入错词本'}</button></div></div>`, root => {
       root.querySelector('#wsSay').addEventListener('click', () => speak(w.w));
